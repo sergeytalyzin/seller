@@ -145,7 +145,14 @@ export function DashboardView() {
     );
   }
 
-  const { metrics, topProfitable, topLoss, expensesByCategory, series } = data;
+  const {
+    metrics,
+    topProfitable,
+    topLoss,
+    expensesByCategory,
+    ozonExpensesByCategory,
+    series,
+  } = data;
   // Заказы появляются раньше финансовых операций — учитываем и их
   const hasSales = metrics.ordersCount > 0 || metrics.orderedQuantity > 0;
 
@@ -156,6 +163,10 @@ export function DashboardView() {
   }));
 
   const maxCategory = Math.max(...expensesByCategory.map((e) => e.amount), 1);
+  const maxOzonCategory = Math.max(
+    ...ozonExpensesByCategory.map((e) => e.amount),
+    1,
+  );
 
   return (
     <div className="space-y-4">
@@ -173,6 +184,11 @@ export function DashboardView() {
           label="Выручка"
           value={formatMoney(metrics.revenue)}
           sub={`${formatNumber(metrics.ordersCount)} доставленных заказов`}
+        />
+        <MetricCard
+          label="Поступление на р/с"
+          value={formatMoney(metrics.payout)}
+          sub="начисления минус все удержания Ozon"
         />
         <MetricCard
           label="Маржинальность"
@@ -193,12 +209,43 @@ export function DashboardView() {
         <MetricCard
           label="Продано товаров"
           value={`${formatNumber(metrics.soldQuantity)} шт`}
-          sub="доставлено, за вычетом возвратов"
+          sub={
+            metrics.returnedQuantity > 0
+              ? `возвратов: ${formatNumber(metrics.returnedQuantity)} шт`
+              : "доставлено, за вычетом возвратов"
+          }
+        />
+        <MetricCard
+          label="Процент выкупа"
+          value={
+            metrics.buyoutPercent != null
+              ? formatPercent(metrics.buyoutPercent)
+              : "—"
+          }
+          sub={
+            metrics.avgSalePrice != null
+              ? `средняя цена продажи ${formatMoney(metrics.avgSalePrice)}`
+              : "доставлено / (доставлено + отменено)"
+          }
         />
         <MetricCard
           label="Расходы Ozon"
           value={formatMoney(metrics.totalOzonExpenses)}
-          sub="комиссия, логистика, возвраты, удержания"
+          sub="комиссия, логистика, реклама, возвраты, удержания"
+        />
+        <MetricCard
+          label="Налог"
+          value={formatMoney(metrics.taxAmount)}
+          sub={
+            metrics.bonusPoints > 0
+              ? `база уменьшена на баллы Ozon: ${formatMoney(metrics.bonusPoints)}`
+              : "НДС + УСН от продаж за вычетом баллов Ozon"
+          }
+        />
+        <MetricCard
+          label="Деньги в товаре"
+          value={formatMoney(metrics.stockValue)}
+          sub={`себестоимость остатков FBO и в пути · ${formatNumber(metrics.stockUnits)} шт доступно`}
         />
         <Link
           href="/products"
@@ -291,6 +338,41 @@ export function DashboardView() {
 
             <div className="rounded-2xl border border-line bg-surface p-5 shadow-lg shadow-black/20">
               <h2 className="text-base font-semibold text-text-primary">
+                Удержания Ozon
+              </h2>
+              {ozonExpensesByCategory.length === 0 ? (
+                <p className="mt-4 text-sm text-text-muted">
+                  Удержаний за период нет.
+                </p>
+              ) : (
+                <div className="mt-4 space-y-2.5">
+                  {ozonExpensesByCategory.map(({ category, amount }) => (
+                    <div
+                      key={category}
+                      className="grid grid-cols-[9rem_1fr_auto] items-center gap-3"
+                    >
+                      <span className="truncate text-sm text-text-secondary">
+                        {category}
+                      </span>
+                      <span className="h-1.5 overflow-hidden rounded-full bg-white/5">
+                        <span
+                          className="block h-full rounded-full bg-gradient-to-r from-cyan-500/60 to-cyan-400/80"
+                          style={{
+                            width: `${Math.max(0, (amount / maxOzonCategory) * 100)}%`,
+                          }}
+                        />
+                      </span>
+                      <span className="text-right text-sm text-text-primary tabular-nums">
+                        {formatMoney(amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-line bg-surface p-5 shadow-lg shadow-black/20">
+              <h2 className="text-base font-semibold text-text-primary">
                 Расходы магазина
               </h2>
               {expensesByCategory.length === 0 ? (
@@ -333,6 +415,22 @@ export function DashboardView() {
                     {formatMoney(metrics.totalProductCost)}
                   </span>
                 </div>
+                {metrics.overheadCost > 0 ? (
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Накладные расходы</span>
+                    <span className="text-text-primary tabular-nums">
+                      {formatMoney(metrics.overheadCost)}
+                    </span>
+                  </div>
+                ) : null}
+                {metrics.taxAmount > 0 ? (
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Налог (НДС + УСН)</span>
+                    <span className="text-text-primary tabular-nums">
+                      {formatMoney(metrics.taxAmount)}
+                    </span>
+                  </div>
+                ) : null}
               </div>
               <Link
                 href="/expenses"

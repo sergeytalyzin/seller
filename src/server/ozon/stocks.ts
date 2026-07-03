@@ -76,6 +76,49 @@ function groupByCluster(items: OzonStockAnalyticsItem[]): ClusterStock[] {
   );
 }
 
+export type SkuStockSummary = {
+  sku: string;
+  /** Доступно к продаже на FBO */
+  availableQty: number;
+  /** В поставках в пути */
+  transitQty: number;
+};
+
+/**
+ * Суммарные остатки по списку SKU (для ежедневных снимков).
+ * POST /v1/analytics/stocks, батчами по 100 SKU (лимит параметра skus).
+ */
+export async function fetchOzonStocksSummary(
+  credentials: OzonCredentials,
+  skus: string[],
+): Promise<SkuStockSummary[]> {
+  const BATCH = 100;
+  const bySku = new Map<string, SkuStockSummary>();
+
+  for (let i = 0; i < skus.length; i += BATCH) {
+    const batch = skus.slice(i, i + BATCH);
+    const response = analyticsStocksResponseSchema.parse(
+      await ozonRequest({
+        endpoint: "/v1/analytics/stocks",
+        body: { skus: batch },
+        credentials,
+      }),
+    );
+
+    // Строки ответа — кластер × склад: суммируем по SKU
+    for (const item of response.items) {
+      if (item.sku == null) continue;
+      const key = String(item.sku);
+      const entry = bySku.get(key) ?? { sku: key, availableQty: 0, transitQty: 0 };
+      entry.availableQty += item.available_stock_count;
+      entry.transitQty += item.transit_stock_count;
+      bySku.set(key, entry);
+    }
+  }
+
+  return [...bySku.values()];
+}
+
 /**
  * Аналитика остатков товара по кластерам и складам Ozon.
  * POST /v1/analytics/stocks; обязательный параметр — skus (array<string>,

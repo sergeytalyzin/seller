@@ -14,7 +14,6 @@ const costFields = [
   { key: "packagingCost", label: "Упаковка, ₽" },
   { key: "deliveryCost", label: "Доставка, ₽" },
   { key: "otherCost", label: "Прочие, ₽" },
-  { key: "taxPercent", label: "Налог, %" },
 ] as const;
 
 type CostField = (typeof costFields)[number]["key"];
@@ -115,7 +114,8 @@ export function CostsView() {
         packagingCost: parseDecimal(cellValue(row, "packagingCost")),
         deliveryCost: parseDecimal(cellValue(row, "deliveryCost")),
         otherCost: parseDecimal(cellValue(row, "otherCost")),
-        taxPercent: parseDecimal(cellValue(row, "taxPercent")),
+        // Налог настраивается на уровне магазина; сохраняем прежнее значение
+        taxPercent: row.cost?.taxPercent ?? 0,
       };
 
       const parsed = bulkCostItemSchema.safeParse(payload);
@@ -322,9 +322,7 @@ export function CostsView() {
                             placeholder="0"
                             aria-label={`${label} — ${row.name}`}
                             aria-invalid={invalid || undefined}
-                            className={`h-8 rounded-md border bg-bg px-2 text-right text-sm text-text-primary tabular-nums placeholder:text-text-muted focus:outline-none ${
-                              key === "taxPercent" ? "w-16" : "w-22"
-                            } ${
+                            className={`h-8 w-22 rounded-md border bg-bg px-2 text-right text-sm text-text-primary tabular-nums placeholder:text-text-muted focus:outline-none ${
                               invalid
                                 ? "border-red-500/70 focus:border-red-500"
                                 : cellDirty

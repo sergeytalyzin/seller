@@ -6,7 +6,9 @@ import {
   LayoutDashboard,
   Package,
   Calculator,
+  Megaphone,
   Wallet,
+  SlidersHorizontal,
   Plug2,
 } from "lucide-react";
 
@@ -14,7 +16,9 @@ export const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Товары", icon: Package },
   { href: "/costs", label: "Себестоимость", icon: Calculator },
+  { href: "/advertising", label: "Реклама", icon: Megaphone },
   { href: "/expenses", label: "Расходы", icon: Wallet },
+  { href: "/settings/store", label: "Параметры расчёта", icon: SlidersHorizontal },
   { href: "/settings/ozon", label: "Настройки Ozon", icon: Plug2 },
 ];
 

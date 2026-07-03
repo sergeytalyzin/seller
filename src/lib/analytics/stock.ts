@@ -36,6 +36,30 @@ export function calcStockDays(
   return stockQty / (ordersQty / periodDays);
 }
 
+export type DailySalesPoint = {
+  ordersQty: number;
+  /** Был ли товар в наличии в этот день; null — снимка остатков нет */
+  hadStock: boolean | null;
+};
+
+/**
+ * Скорость продаж, шт/день (Excel '1. UNIT'!BO6): среднее заказов в день,
+ * где дни без заказов И без остатка на складе исключаются из знаменателя —
+ * отсутствие товара не занижает скорость. Дни без снимка остатков считаются
+ * как обычные дни с нулём заказов (как в Excel).
+ */
+export function calcSalesVelocity(days: DailySalesPoint[]): number | null {
+  let sum = 0;
+  let count = 0;
+  for (const day of days) {
+    if (day.ordersQty <= 0 && day.hadStock === false) continue;
+    sum += day.ordersQty;
+    count += 1;
+  }
+  if (count === 0) return null;
+  return sum / count;
+}
+
 export function getStockStatus(
   stockQty: number | null,
   ordersQty: number | null,

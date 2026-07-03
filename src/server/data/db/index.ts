@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { DEFAULT_STORE_SETTINGS } from "@/types/settings";
 import type { DataStore } from "..";
 
 /** Реализация data-слоя на Prisma. Все запросы ограничены магазином storeId. */
@@ -104,6 +105,69 @@ export function createDbDataStore(storeId: string): DataStore {
       if (!existing) return false;
       await db.expense.delete({ where: { id } });
       return true;
+    },
+
+    async getStoreSettings() {
+      const settings = await db.storeSettings.findUnique({ where: { storeId } });
+      if (!settings) return DEFAULT_STORE_SETTINGS;
+      return {
+        usnPercent: settings.usnPercent,
+        vatPercent: settings.vatPercent,
+        overheadPerUnit: settings.overheadPerUnit,
+      };
+    },
+
+    async saveStoreSettings(input) {
+      const settings = await db.storeSettings.upsert({
+        where: { storeId },
+        update: input,
+        create: { ...input, storeId },
+      });
+      return {
+        usnPercent: settings.usnPercent,
+        vatPercent: settings.vatPercent,
+        overheadPerUnit: settings.overheadPerUnit,
+      };
+    },
+
+    async listBonusAccruals(params = {}) {
+      const { dateFrom, dateTo } = params;
+      return db.bonusAccrual.findMany({
+        where: {
+          storeId,
+          ...(dateFrom || dateTo
+            ? { date: { ...(dateFrom ? { gte: dateFrom } : {}), ...(dateTo ? { lte: dateTo } : {}) } }
+            : {}),
+        },
+        orderBy: { date: "desc" },
+      });
+    },
+
+    async createBonusAccrual(input) {
+      return db.bonusAccrual.create({ data: { ...input, storeId } });
+    },
+
+    async deleteBonusAccrual(id) {
+      const existing = await db.bonusAccrual.findFirst({
+        where: { id, storeId },
+        select: { id: true },
+      });
+      if (!existing) return false;
+      await db.bonusAccrual.delete({ where: { id } });
+      return true;
+    },
+
+    async listStockSnapshots(params = {}) {
+      const { dateFrom, dateTo } = params;
+      return db.stockSnapshot.findMany({
+        where: {
+          storeId,
+          ...(dateFrom || dateTo
+            ? { date: { ...(dateFrom ? { gte: dateFrom } : {}), ...(dateTo ? { lte: dateTo } : {}) } }
+            : {}),
+        },
+        orderBy: { date: "asc" },
+      });
     },
   };
 }

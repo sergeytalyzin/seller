@@ -60,13 +60,19 @@ function ExpenseBreakdown({ analytics }: { analytics: ProductAnalytics }) {
   const items = [
     { label: "Комиссия Ozon", value: analytics.commission },
     { label: "Логистика", value: analytics.logistics },
+    { label: "Последняя миля", value: analytics.lastMile },
+    { label: "Обратная логистика", value: analytics.returnLogistics },
     { label: "Эквайринг", value: analytics.acquiring },
+    { label: "Продвижение", value: analytics.advertising },
+    { label: "Хранение", value: analytics.storage },
     { label: "Возвраты", value: analytics.returnAmount },
     { label: "Штрафы", value: analytics.penalty },
     { label: "Прочие удержания", value: analytics.otherDeduction },
+    { label: "Не расшифровано", value: analytics.unclassified },
     ...(hasCost
       ? [
           { label: "Себестоимость", value: analytics.totalProductCost },
+          { label: "Накладные", value: analytics.overheadCost },
           { label: "Налог", value: analytics.taxAmount },
         ]
       : []),
@@ -109,6 +115,62 @@ function ExpenseBreakdown({ analytics }: { analytics: ProductAnalytics }) {
   );
 }
 
+/** Плановая юнит-экономика при текущей цене (Excel «Чистыми / ROI / Маржа») */
+function UnitEconomicsCard({ analytics }: { analytics: ProductAnalytics }) {
+  const ue = analytics.unitEconomics;
+
+  const row = (
+    label: string,
+    net: number,
+    roi: number | null,
+    margin: number | null,
+  ) => (
+    <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 text-sm">
+      <span className="text-text-secondary">{label}</span>
+      <span
+        className={`text-right font-semibold tabular-nums ${
+          net < 0 ? "text-red-400" : "text-emerald-400"
+        }`}
+      >
+        {formatMoney(net)}
+      </span>
+      <span className="w-20 text-right tabular-nums text-text-secondary">
+        {roi != null ? `ROI ${formatPercent(roi)}` : "—"}
+      </span>
+      <span className="w-24 text-right tabular-nums text-text-secondary">
+        {margin != null ? `маржа ${formatPercent(margin)}` : "—"}
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-5 shadow-lg shadow-black/20">
+      <h2 className="text-base font-semibold text-text-primary">
+        Юнит-экономика
+      </h2>
+      <p className="mt-0.5 text-xs text-text-muted">
+        плановая прибыль с 1 штуки при текущей цене — по фактическим комиссии,
+        логистике и налогам за период
+      </p>
+      {ue == null ? (
+        <p className="mt-4 text-sm text-text-muted">
+          Недостаточно данных: нужны цена товара и продажи за период.
+        </p>
+      ) : (
+        <div className="mt-4 space-y-2.5">
+          {row("Чистыми с единицы", ue.netPerUnit, ue.roiPercent, ue.marginPercent)}
+          {row(
+            "С учётом рекламы",
+            ue.netPerUnitWithAds,
+            ue.roiWithAdsPercent,
+            ue.marginWithAdsPercent,
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const shortDate = new Intl.DateTimeFormat("ru-RU", {
   day: "2-digit",
   month: "2-digit",
@@ -116,7 +178,11 @@ const shortDate = new Intl.DateTimeFormat("ru-RU", {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Дневные серии продаж и денег (прибыль при заполненной себестоимости, иначе выручка) */
+/**
+ * Дневные серии продаж и денег (прибыль при заполненной себестоимости, иначе
+ * выручка). Прибыль по дню — приближённая, без налога и накладных расходов:
+ * ставки заданы на уровне магазина и на клиенте недоступны.
+ */
 function buildDailySeries(
   operations: FinanceOperation[],
   cost: ProductCost | null,
@@ -124,7 +190,6 @@ function buildDailySeries(
   if (operations.length === 0) return { sales: [], money: [] };
 
   const unitCost = cost ? calcProductUnitCost(cost) : 0;
-  const taxPercent = cost?.taxPercent ?? 0;
 
   const byDay = new Map<string, { sales: number; money: number }>();
   let minTime = Infinity;
@@ -142,15 +207,17 @@ function buildDailySeries(
     const deductions =
       op.commission +
       op.logistics +
+      op.lastMile +
+      op.returnLogistics +
       op.acquiring +
+      op.advertising +
+      op.storage +
       op.returnAmount +
       op.penalty +
-      op.otherDeduction;
+      op.otherDeduction +
+      op.unclassified;
     entry.money += cost
-      ? op.amount -
-        deductions -
-        unitCost * Math.max(op.quantity, 0) -
-        (op.amount * taxPercent) / 100
+      ? op.amount - deductions - unitCost * Math.max(op.quantity, 0)
       : op.amount;
     byDay.set(key, entry);
   }
@@ -262,7 +329,6 @@ export function ProductDetail({
 
   const { product, analytics, cost, operations } = data;
   const noCost = analytics.status === "no_cost";
-  const returnsCount = operations.filter((op) => op.quantity < 0).length;
   const series = buildDailySeries(operations, cost);
 
   return (
@@ -299,7 +365,41 @@ export function ProductDetail({
               </span>
               <span>
                 Возвраты{" "}
-                <span className="text-text-secondary">{returnsCount} шт</span>
+                <span className="text-text-secondary">
+                  {formatNumber(analytics.returnedQuantity)} шт
+                </span>
+              </span>
+              <span title="Доставлено / (доставлено + отменено) по FBO-заказам за период">
+                Выкуп{" "}
+                <span className="text-text-secondary">
+                  {analytics.buyoutPercent != null
+                    ? formatPercent(analytics.buyoutPercent)
+                    : "—"}
+                </span>
+              </span>
+              <span title="Средняя цена продажи за период">
+                Ср. цена{" "}
+                <span className="text-text-secondary">
+                  {analytics.avgSalePrice != null
+                    ? formatMoney(analytics.avgSalePrice)
+                    : "—"}
+                </span>
+              </span>
+              <span title="Скорость продаж за последние 31 день, без дней отсутствия товара">
+                Скорость{" "}
+                <span className="text-text-secondary">
+                  {analytics.salesVelocity != null
+                    ? `${analytics.salesVelocity.toFixed(1)} шт/день`
+                    : "—"}
+                </span>
+              </span>
+              <span title="Остаток на FBO / скорость продаж">
+                Запас{" "}
+                <span className="text-text-secondary">
+                  {analytics.stockDays != null
+                    ? `${Math.round(analytics.stockDays)} дн`
+                    : "—"}
+                </span>
               </span>
             </div>
           </div>
@@ -318,7 +418,7 @@ export function ProductDetail({
         <MetricCard
           label="Расходы всего"
           value={formatMoney(analytics.totalExpenses)}
-          sub={noCost ? "без себестоимости и налога" : "Ozon + себестоимость + налог"}
+          sub={noCost ? "без себестоимости и налога" : "Ozon + себестоимость + накладные + налог"}
         />
         <MetricCard
           label="Чистая прибыль"
@@ -352,6 +452,8 @@ export function ProductDetail({
       <div className="grid items-start gap-4 xl:grid-cols-[2fr_1fr]">
         <div className="min-w-0 space-y-4">
           <ExpenseBreakdown analytics={analytics} />
+
+          <UnitEconomicsCard analytics={analytics} />
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-2xl border border-line bg-surface p-5 shadow-lg shadow-black/20">

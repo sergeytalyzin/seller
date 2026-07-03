@@ -6,4 +6,6 @@ export const queryKeys = {
   costs: ["costs"] as const,
   expenses: ["expenses"] as const,
   ozonSettings: ["ozon-settings"] as const,
+  storeSettings: ["store-settings"] as const,
+  bonusPoints: ["bonus-points"] as const,
 };

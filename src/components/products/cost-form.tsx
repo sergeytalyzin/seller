@@ -11,15 +11,13 @@ type FieldKey =
   | "purchaseCost"
   | "packagingCost"
   | "deliveryCost"
-  | "otherCost"
-  | "taxPercent";
+  | "otherCost";
 
 const fields: { key: FieldKey; label: string }[] = [
   { key: "purchaseCost", label: "Закупка, ₽" },
   { key: "packagingCost", label: "Упаковка, ₽" },
   { key: "deliveryCost", label: "Доставка до склада, ₽" },
   { key: "otherCost", label: "Прочие расходы, ₽" },
-  { key: "taxPercent", label: "Налог с выручки, %" },
 ];
 
 function Field({
@@ -58,7 +56,6 @@ export function CostForm({
     packagingCost: cost ? String(cost.packagingCost) : "",
     deliveryCost: cost ? String(cost.deliveryCost) : "",
     otherCost: cost ? String(cost.otherCost) : "",
-    taxPercent: cost ? String(cost.taxPercent) : "6",
   });
   const [comment, setComment] = useState(cost?.comment ?? "");
   const [errors, setErrors] = useState<Partial<Record<FieldKey, string>>>({});
@@ -85,7 +82,8 @@ export function CostForm({
       packagingCost: parseDecimal(values.packagingCost),
       deliveryCost: parseDecimal(values.deliveryCost),
       otherCost: parseDecimal(values.otherCost),
-      taxPercent: parseDecimal(values.taxPercent),
+      // Налог настраивается на уровне магазина; сохраняем прежнее значение поля
+      taxPercent: cost?.taxPercent ?? 0,
       comment: comment.trim() === "" ? null : comment.trim(),
     };
 

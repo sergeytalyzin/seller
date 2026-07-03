@@ -10,10 +10,14 @@ export const productCostInputSchema = z.object({
   packagingCost: money,
   deliveryCost: money,
   otherCost: money,
+  // Налог задаётся на уровне магазина (/settings/store); поле оставлено
+  // для совместимости со старыми данными
   taxPercent: z
     .number({ message: "Укажите число" })
     .min(0, "Не может быть меньше нуля")
-    .max(100, "Не больше 100%"),
+    .max(100, "Не больше 100%")
+    .optional()
+    .default(0),
   comment: z
     .string()
     .trim()

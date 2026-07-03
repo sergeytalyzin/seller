@@ -30,10 +30,64 @@ model Store {
   user User @relation(fields: [userId], references: [id])
 
   ozonSettings      OzonSettings?
+  storeSettings     StoreSettings?
   products          Product[]
   financeOperations FinanceOperation[]
   fboPostings       FboPosting[]
   expenses          Expense[]
+  bonusAccruals     BonusAccrual[]
+  stockSnapshots    StockSnapshot[]
+}
+
+// Параметры расчёта прибыли на уровне магазина (в Excel — шапка листа «1. UNIT»)
+model StoreSettings {
+  id      String @id @default(cuid())
+  storeId String @unique
+  // Ставка УСН «доходы», % (Excel '1. UNIT'!H1)
+  usnPercent Float @default(0)
+  // Ставка упрощённого НДС, % (Excel '1. UNIT'!H2)
+  vatPercent Float @default(0)
+  // Накладные расходы на единицу товара, ₽ (Excel '1. UNIT'!H3)
+  overheadPerUnit Float @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id])
+}
+
+// Баллы Ozon за скидки (соплатёж) — вводятся вручную, уменьшают налоговую базу
+// (Excel «5. Расчет ЧП» B78)
+model BonusAccrual {
+  id        String   @id @default(cuid())
+  storeId   String
+  date      DateTime
+  amount    Float
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@index([storeId, date])
+}
+
+// Ежедневный снимок остатков FBO по товару — чтобы считать скорость продаж
+// без дней, когда товара не было в наличии (Excel «Ежедневный сбор остатков»)
+model StockSnapshot {
+  id           String   @id @default(cuid())
+  storeId      String
+  productId    String?
+  sku          String
+  date         DateTime // день снимка, 00:00 UTC
+  availableQty Int      @default(0)
+  transitQty   Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  store   Store    @relation(fields: [storeId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@unique([storeId, sku, date])
+  @@index([storeId, date])
 }
 
 model OzonSettings {
@@ -68,6 +122,7 @@ model Product {
   cost              ProductCost?
   financeOperations FinanceOperation[]
   fboPostings       FboPosting[]
+  stockSnapshots    StockSnapshot[]
 
   @@unique([storeId, offerId])
   @@index([storeId, sku])
@@ -102,11 +157,23 @@ model FinanceOperation {
   quantity          Int      @default(0)
   amount            Float    @default(0)
   commission        Float    @default(0)
+  // Прямая логистика: магистраль, сборка, обработка отправления
   logistics         Float    @default(0)
+  // Последняя миля (Excel «5. Расчет ЧП» B18)
+  lastMile          Float    @default(0)
+  // Обратная логистика и обработка возвратов/невыкупов (Excel B19)
+  returnLogistics   Float    @default(0)
   acquiring         Float    @default(0)
+  // Продвижение: клик, трафареты, вывод в топ, за заказ, бренд (Excel B22)
+  advertising       Float    @default(0)
+  // Хранение/размещение на складе Ozon
+  storage           Float    @default(0)
   returnAmount      Float    @default(0)
   penalty           Float    @default(0)
   otherDeduction    Float    @default(0)
+  // Невязка: часть суммы операции, не попавшая ни в одну категорию
+  // (Excel «НЕ РАСШИФРОВАННЫЕ НАЧИСЛЕНИЯ»)
+  unclassified      Float    @default(0)
   raw               Json?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

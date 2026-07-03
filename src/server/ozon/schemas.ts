@@ -138,49 +138,46 @@ export type OzonFboPosting = z.infer<
   typeof fboPostingListResponseSchema
 >["postings"][number];
 
+// Операция из POST /v3/finance/transaction/list; используется и для
+// повторной нормализации сохранённого raw
+export const financeOperationSchema = z.object({
+  operation_id: z.number(),
+  operation_type: z.string(),
+  operation_date: z.string(),
+  operation_type_name: z.string().optional().default(""),
+  accruals_for_sale: z.number().optional().default(0),
+  sale_commission: z.number().optional().default(0),
+  amount: z.number().optional().default(0),
+  type: z.string().optional().default(""),
+  delivery_charge: z.number().optional().default(0),
+  return_delivery_charge: z.number().optional().default(0),
+  items: z
+    .array(
+      z.object({
+        name: z.string().optional().default(""),
+        sku: z.number().optional(),
+      }),
+    )
+    .optional()
+    .default([]),
+  services: z
+    .array(
+      z.object({
+        name: z.string().optional().default(""),
+        price: z.number().optional().default(0),
+      }),
+    )
+    .optional()
+    .default([]),
+});
+
 // POST /v3/finance/transaction/list — financev3FinanceTransactionListV3Response
 export const financeTransactionListResponseSchema = z.object({
   result: z.object({
-    operations: z
-      .array(
-        z.object({
-          operation_id: z.number(),
-          operation_type: z.string(),
-          operation_date: z.string(),
-          operation_type_name: z.string().optional().default(""),
-          accruals_for_sale: z.number().optional().default(0),
-          sale_commission: z.number().optional().default(0),
-          amount: z.number().optional().default(0),
-          type: z.string().optional().default(""),
-          delivery_charge: z.number().optional().default(0),
-          return_delivery_charge: z.number().optional().default(0),
-          items: z
-            .array(
-              z.object({
-                name: z.string().optional().default(""),
-                sku: z.number().optional(),
-              }),
-            )
-            .optional()
-            .default([]),
-          services: z
-            .array(
-              z.object({
-                name: z.string().optional().default(""),
-                price: z.number().optional().default(0),
-              }),
-            )
-            .optional()
-            .default([]),
-        }),
-      )
-      .optional()
-      .default([]),
+    operations: z.array(financeOperationSchema).optional().default([]),
     page_count: z.number().optional().default(0),
     row_count: z.number().optional().default(0),
   }),
 });
 
-export type OzonFinanceOperation = z.infer<
-  typeof financeTransactionListResponseSchema
->["result"]["operations"][number];
+export type OzonFinanceOperation = z.infer<typeof financeOperationSchema>;

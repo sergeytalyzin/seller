@@ -13,10 +13,22 @@ export type FinanceOperation = {
   amount: number;
   /** Все расходные поля хранятся положительными числами, ₽ */
   commission: number;
+  /** Прямая логистика: магистраль, сборка, обработка отправления */
   logistics: number;
+  /** Последняя миля */
+  lastMile: number;
+  /** Обратная логистика и обработка возвратов/невыкупов */
+  returnLogistics: number;
   acquiring: number;
+  /** Продвижение: клик, трафареты, вывод в топ, за заказ, бренд */
+  advertising: number;
+  /** Хранение/размещение на складе Ozon */
+  storage: number;
+  /** Возвраты выручки (сторно начислений) */
   returnAmount: number;
   penalty: number;
   otherDeduction: number;
+  /** Невязка — часть суммы операции, не попавшая ни в одну категорию */
+  unclassified: number;
   raw: unknown;
 };

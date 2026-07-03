@@ -1,9 +1,14 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { OzonApiError, type OzonCredentials } from "@/server/ozon/client";
 import { fetchOzonProducts } from "@/server/ozon/products";
-import { fetchOzonOperations } from "@/server/ozon/finance";
+import {
+  fetchOzonOperations,
+  normalizeOzonOperation,
+} from "@/server/ozon/finance";
 import { fetchOzonFboPostings } from "@/server/ozon/postings";
+import { fetchOzonStocksSummary } from "@/server/ozon/stocks";
+import { financeOperationSchema } from "@/server/ozon/schemas";
 
 export type SyncResult = {
   success: boolean;
@@ -124,10 +129,15 @@ export async function syncFinanceOperations(
         amount: op.amount,
         commission: op.commission,
         logistics: op.logistics,
+        lastMile: op.lastMile,
+        returnLogistics: op.returnLogistics,
         acquiring: op.acquiring,
+        advertising: op.advertising,
+        storage: op.storage,
         returnAmount: op.returnAmount,
         penalty: op.penalty,
         otherDeduction: op.otherDeduction,
+        unclassified: op.unclassified,
         raw: op.raw as unknown as Prisma.InputJsonValue,
       };
     }),
@@ -136,6 +146,99 @@ export async function syncFinanceOperations(
 
   result.operationsCreated = created.count;
   return result;
+}
+
+/**
+ * Переразложение сохранённых операций по категориям из raw-ответа Ozon.
+ * Нужно после изменения словаря категорий: старые строки в БД остаются
+ * с прежней разбивкой, пока их не пересчитать.
+ */
+export async function recategorizeFinanceOperations(
+  storeId: string,
+): Promise<number> {
+  const operations = await db.financeOperation.findMany({
+    where: { storeId, raw: { not: Prisma.JsonNull } },
+    select: { id: true, raw: true },
+  });
+
+  let updated = 0;
+  const BATCH = 25;
+  for (let i = 0; i < operations.length; i += BATCH) {
+    const batch = operations.slice(i, i + BATCH);
+    await Promise.all(
+      batch.map(async (row) => {
+        const parsed = financeOperationSchema.safeParse(row.raw);
+        if (!parsed.success) return;
+        const op = normalizeOzonOperation(parsed.data);
+        await db.financeOperation.update({
+          where: { id: row.id },
+          data: {
+            amount: op.amount,
+            commission: op.commission,
+            logistics: op.logistics,
+            lastMile: op.lastMile,
+            returnLogistics: op.returnLogistics,
+            acquiring: op.acquiring,
+            advertising: op.advertising,
+            storage: op.storage,
+            returnAmount: op.returnAmount,
+            penalty: op.penalty,
+            otherDeduction: op.otherDeduction,
+            unclassified: op.unclassified,
+          },
+        });
+        updated += 1;
+      }),
+    );
+  }
+
+  return updated;
+}
+
+/**
+ * Ежедневный снимок остатков FBO по всем товарам магазина —
+ * основа расчёта скорости продаж без дней отсутствия товара
+ * (аналог листа «Ежедневный сбор остатков» в Excel).
+ */
+export async function syncStockSnapshots(storeId: string): Promise<number> {
+  const credentials = await getCredentials(storeId);
+  const products = await db.product.findMany({
+    where: { storeId, sku: { not: null } },
+    select: { id: true, sku: true },
+  });
+  if (products.length === 0) return 0;
+
+  const productBySku = new Map(products.map((p) => [p.sku as string, p.id]));
+  const summaries = await fetchOzonStocksSummary(
+    credentials,
+    products.map((p) => p.sku as string),
+  );
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  for (const summary of summaries) {
+    await db.stockSnapshot.upsert({
+      where: {
+        storeId_sku_date: { storeId, sku: summary.sku, date: today },
+      },
+      update: {
+        availableQty: summary.availableQty,
+        transitQty: summary.transitQty,
+        productId: productBySku.get(summary.sku) ?? null,
+      },
+      create: {
+        storeId,
+        sku: summary.sku,
+        date: today,
+        availableQty: summary.availableQty,
+        transitQty: summary.transitQty,
+        productId: productBySku.get(summary.sku) ?? null,
+      },
+    });
+  }
+
+  return summaries.length;
 }
 
 /**
@@ -249,6 +352,14 @@ export async function syncAll(
         ? error.message
         : "Не удалось загрузить заказы FBO",
     );
+  }
+
+  // Снимок остатков не критичен для остальной аналитики — ошибки не фатальны
+  try {
+    await syncStockSnapshots(storeId);
+  } catch (error) {
+    console.error("syncStockSnapshots", error);
+    result.errors.push("Не удалось сохранить снимок остатков");
   }
 
   return result;

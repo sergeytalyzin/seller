@@ -1,3 +1,8 @@
+import {
+  classifyOperation,
+  classifyService,
+  type ExpenseCategory,
+} from "@/lib/analytics/operation-classifier";
 import { ozonRequest, type OzonCredentials } from "./client";
 import {
   financeTransactionListResponseSchema,
@@ -16,10 +21,15 @@ export type NormalizedOzonOperation = {
   amount: number;
   commission: number;
   logistics: number;
+  lastMile: number;
+  returnLogistics: number;
   acquiring: number;
+  advertising: number;
+  storage: number;
   returnAmount: number;
   penalty: number;
   otherDeduction: number;
+  unclassified: number;
   raw: OzonFinanceOperation;
 };
 
@@ -28,74 +38,61 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Ozon ограничивает период запроса транзакций одним месяцем */
 const CHUNK_DAYS = 28;
 
-type DeductionKind = "acquiring" | "logistics" | "return" | "penalty" | "other";
-
-/** Категория услуги по имени из enum OperationService.name (swagger) */
-function classifyService(name: string): DeductionKind {
-  if (name.includes("Acquiring")) return "acquiring";
-  if (name.includes("NotDelivered") || name.includes("Return")) return "return";
-  if (
-    name.includes("Logistic") ||
-    name.includes("LastMile") ||
-    name.includes("Deliv") ||
-    name.includes("Flow") ||
-    name.includes("Drop")
-  ) {
-    return "logistics";
-  }
-  if (name.includes("Penalty") || name.includes("Fine")) return "penalty";
-  return "other";
-}
-
-function classifyOperationType(operationType: string): DeductionKind {
-  if (operationType.includes("Penalty") || operationType.includes("Fine")) {
-    return "penalty";
-  }
-  if (operationType.includes("Return") || operationType.includes("NotDelivered")) {
-    return "return";
-  }
-  if (operationType.includes("Acquiring")) return "acquiring";
-  return "other";
-}
-
 /**
- * Разложение операции Ozon на поля нашей модели.
+ * Разложение операции Ozon на поля нашей модели по словарю категорий
+ * (перенесён из эталонной Excel-таблицы, лист «Расшифровка (технич лист)»).
  * Инвариант: amount − все расходы === итоговая сумма операции Ozon (op.amount);
- * неразобранный остаток относится к категории по типу операции — деньги не теряются.
+ * нераспознанный остаток попадает в unclassified — деньги не теряются
+ * (аналог строки «НЕ РАСШИФРОВАННЫЕ НАЧИСЛЕНИЯ» в Excel).
  */
-function normalize(op: OzonFinanceOperation): NormalizedOzonOperation {
+export function normalizeOzonOperation(
+  op: OzonFinanceOperation,
+): NormalizedOzonOperation {
   const revenue = op.accruals_for_sale > 0 ? op.accruals_for_sale : 0;
 
-  const deductions: Record<DeductionKind, number> = {
-    acquiring: 0,
+  const deductions: Record<ExpenseCategory, number> = {
+    commission: 0,
     logistics: 0,
-    return: op.accruals_for_sale < 0 ? -op.accruals_for_sale : 0,
+    lastMile: 0,
+    returnLogistics: 0,
+    acquiring: 0,
+    advertising: 0,
+    storage: 0,
     penalty: 0,
     other: 0,
   };
+  // Возвраты выручки: отрицательные начисления за продажу
+  const returnAmount = op.accruals_for_sale < 0 ? -op.accruals_for_sale : 0;
+  let unclassified = 0;
+
+  // Категория самой операции — используется и для остатка,
+  // и как запасной вариант для нераспознанных сервисов
+  const operationCategory = classifyOperation(
+    op.operation_type,
+    op.operation_type_name,
+  );
 
   // Комиссия за продажу (при возврате Ozon возвращает комиссию — значение уменьшится)
-  const commission = -op.sale_commission;
-
+  deductions.commission += -op.sale_commission;
   deductions.logistics += -op.delivery_charge;
-  deductions.return += -op.return_delivery_charge;
+  deductions.returnLogistics += -op.return_delivery_charge;
 
   for (const service of op.services) {
-    deductions[classifyService(service.name)] += -service.price;
+    const category = classifyService(service.name) ?? operationCategory;
+    if (category) deductions[category] += -service.price;
+    else unclassified += -service.price;
   }
 
-  // Сверка с фактическим итогом операции: остаток — в категорию по типу операции
+  // Сверка с фактическим итогом операции: остаток — по типу операции
   const accountedNet =
     revenue -
-    commission -
-    deductions.acquiring -
-    deductions.logistics -
-    deductions.return -
-    deductions.penalty -
-    deductions.other;
+    returnAmount -
+    unclassified -
+    Object.values(deductions).reduce((sum, value) => sum + value, 0);
   const residual = accountedNet - op.amount;
   if (Math.abs(residual) > 0.005) {
-    deductions[classifyOperationType(op.operation_type)] += residual;
+    if (operationCategory) deductions[operationCategory] += residual;
+    else unclassified += residual;
   }
 
   // В транзакциях Ozon нет количества единиц: считаем 1 доставку = 1 продажа
@@ -116,12 +113,17 @@ function normalize(op: OzonFinanceOperation): NormalizedOzonOperation {
     productName: item?.name || null,
     quantity,
     amount: revenue,
-    commission,
+    commission: deductions.commission,
     logistics: deductions.logistics,
+    lastMile: deductions.lastMile,
+    returnLogistics: deductions.returnLogistics,
     acquiring: deductions.acquiring,
-    returnAmount: deductions.return,
+    advertising: deductions.advertising,
+    storage: deductions.storage,
+    returnAmount,
     penalty: deductions.penalty,
     otherDeduction: deductions.other,
+    unclassified,
     raw: op,
   };
 }
@@ -150,7 +152,7 @@ async function fetchChunk(
       }),
     );
 
-    operations.push(...response.result.operations.map(normalize));
+    operations.push(...response.result.operations.map(normalizeOzonOperation));
     if (page >= response.result.page_count) break;
     page += 1;
   }

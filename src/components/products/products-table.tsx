@@ -14,7 +14,8 @@ export type SortKey =
   | "marginPercent"
   | "roiPercent"
   | "soldQuantity"
-  | "orderedQuantity";
+  | "orderedQuantity"
+  | "buyoutPercent";
 
 export type SortState = { key: SortKey; dir: "asc" | "desc" };
 
@@ -93,11 +94,15 @@ export function ProductsTable({
             <th scope="col" className={headerCell}>Цена</th>
             <SortableHeader label="Заказано" sortKey="orderedQuantity" sort={sort} onSort={onSort} />
             <SortableHeader label="Продано" sortKey="soldQuantity" sort={sort} onSort={onSort} />
+            <SortableHeader label="% выкупа" sortKey="buyoutPercent" sort={sort} onSort={onSort} />
             <SortableHeader label="Выручка" sortKey="grossRevenue" sort={sort} onSort={onSort} />
+            <th scope="col" className={headerCell}>Ср. цена</th>
             <th scope="col" className={headerCell}>Комиссия</th>
             <th scope="col" className={headerCell}>Логистика</th>
+            <th scope="col" className={headerCell}>Реклама</th>
             <th scope="col" className={headerCell}>Себестоимость</th>
             <SortableHeader label="Прибыль" sortKey="netProfit" sort={sort} onSort={onSort} />
+            <th scope="col" className={headerCell}>Приб./ед.</th>
             <SortableHeader label="Маржа" sortKey="marginPercent" sort={sort} onSort={onSort} />
             <SortableHeader label="ROI" sortKey="roiPercent" sort={sort} onSort={onSort} />
             <th scope="col" className={`${headerCell} text-left!`}>Статус</th>
@@ -147,14 +152,35 @@ export function ProductsTable({
                 >
                   {formatNumber(p.soldQuantity)}
                 </td>
+                <td
+                  className="px-3 py-2.5 text-right tabular-nums text-text-secondary"
+                  title="Доставлено / (доставлено + отменено) по FBO-заказам за период"
+                >
+                  {p.buyoutPercent != null ? formatPercent(p.buyoutPercent) : "—"}
+                </td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-text-primary">
                   {formatMoney(p.grossRevenue)}
+                </td>
+                <td
+                  className="px-3 py-2.5 text-right tabular-nums text-text-secondary"
+                  title="Средняя цена продажи за период"
+                >
+                  {p.avgSalePrice != null ? formatMoney(p.avgSalePrice) : "—"}
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">
                   {formatMoney(p.commission)}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-text-secondary">
-                  {formatMoney(p.logistics)}
+                <td
+                  className="px-3 py-2.5 text-right tabular-nums text-text-secondary"
+                  title="Прямая логистика и последняя миля"
+                >
+                  {formatMoney(p.logistics + p.lastMile)}
+                </td>
+                <td
+                  className="px-3 py-2.5 text-right tabular-nums text-text-secondary"
+                  title="Продвижение, списанное с баланса Seller API"
+                >
+                  {formatMoney(p.advertising)}
                 </td>
                 <td
                   className="px-3 py-2.5 text-right tabular-nums text-text-secondary"
@@ -168,6 +194,12 @@ export function ProductsTable({
                   }`}
                 >
                   {noCost ? "—" : formatMoney(p.netProfit)}
+                </td>
+                <td
+                  className="px-3 py-2.5 text-right tabular-nums text-text-secondary"
+                  title="Прибыль на 1 проданную единицу"
+                >
+                  {p.profitPerUnit != null ? formatMoney(p.profitPerUnit) : "—"}
                 </td>
                 <td
                   className={`px-3 py-2.5 text-right tabular-nums ${

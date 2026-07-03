@@ -4,11 +4,25 @@ import type { Product, ProductCost, ProductCostInput } from "@/types/product";
 import type { FinanceOperation } from "@/types/finance";
 import type { FboPosting } from "@/types/posting";
 import type { Expense, ExpenseInput } from "@/types/expense";
+import type {
+  BonusAccrual,
+  BonusAccrualInput,
+  StoreSettings,
+} from "@/types/settings";
 import { createDbDataStore } from "./db";
 
 export type DateRange = {
   dateFrom?: Date;
   dateTo?: Date;
+};
+
+/** Снимок остатков FBO по товару за день */
+export type StockSnapshotRow = {
+  productId: string | null;
+  sku: string;
+  date: Date;
+  availableQty: number;
+  transitQty: number;
 };
 
 /**
@@ -39,6 +53,15 @@ export type DataStore = {
   createExpense(input: ExpenseInput): Promise<Expense>;
   updateExpense(id: string, input: ExpenseInput): Promise<Expense | null>;
   deleteExpense(id: string): Promise<boolean>;
+
+  getStoreSettings(): Promise<StoreSettings>;
+  saveStoreSettings(input: StoreSettings): Promise<StoreSettings>;
+
+  listBonusAccruals(params?: DateRange): Promise<BonusAccrual[]>;
+  createBonusAccrual(input: BonusAccrualInput): Promise<BonusAccrual>;
+  deleteBonusAccrual(id: string): Promise<boolean>;
+
+  listStockSnapshots(params?: DateRange): Promise<StockSnapshotRow[]>;
 };
 
 export function getDataStore(storeId: string): DataStore {

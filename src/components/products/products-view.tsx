@@ -40,7 +40,10 @@ function applyFilters(
   });
 
   const dir = sort.dir === "desc" ? -1 : 1;
-  return filtered.sort((a, b) => (a[sort.key] - b[sort.key]) * dir);
+  // null (нет данных) всегда в конце списка независимо от направления
+  return filtered.sort(
+    (a, b) => ((a[sort.key] ?? -Infinity) - (b[sort.key] ?? -Infinity)) * dir,
+  );
 }
 
 function TableSkeleton() {
