@@ -1,6 +1,28 @@
 import { db } from "@/lib/db";
-import { DEFAULT_STORE_SETTINGS } from "@/types/settings";
+import { DEFAULT_STORE_SETTINGS, type StoreSettings } from "@/types/settings";
 import type { DataStore } from "..";
+
+function toStoreSettings(row: {
+  usnPercent: number;
+  vatPercent: number;
+  overheadPerUnit: number;
+  agentCommissionPercent: number;
+  logisticsRatePerKgUsd: number;
+  currencyMarkupPercent: number;
+  manualCnyRate: number | null;
+  manualUsdRate: number | null;
+}): StoreSettings {
+  return {
+    usnPercent: row.usnPercent,
+    vatPercent: row.vatPercent,
+    overheadPerUnit: row.overheadPerUnit,
+    agentCommissionPercent: row.agentCommissionPercent,
+    logisticsRatePerKgUsd: row.logisticsRatePerKgUsd,
+    currencyMarkupPercent: row.currencyMarkupPercent,
+    manualCnyRate: row.manualCnyRate,
+    manualUsdRate: row.manualUsdRate,
+  };
+}
 
 /** Реализация data-слоя на Prisma. Все запросы ограничены магазином storeId. */
 export function createDbDataStore(storeId: string): DataStore {
@@ -110,11 +132,7 @@ export function createDbDataStore(storeId: string): DataStore {
     async getStoreSettings() {
       const settings = await db.storeSettings.findUnique({ where: { storeId } });
       if (!settings) return DEFAULT_STORE_SETTINGS;
-      return {
-        usnPercent: settings.usnPercent,
-        vatPercent: settings.vatPercent,
-        overheadPerUnit: settings.overheadPerUnit,
-      };
+      return toStoreSettings(settings);
     },
 
     async saveStoreSettings(input) {
@@ -123,11 +141,34 @@ export function createDbDataStore(storeId: string): DataStore {
         update: input,
         create: { ...input, storeId },
       });
-      return {
-        usnPercent: settings.usnPercent,
-        vatPercent: settings.vatPercent,
-        overheadPerUnit: settings.overheadPerUnit,
-      };
+      return toStoreSettings(settings);
+    },
+
+    async listProductSourcing() {
+      return db.productSourcing.findMany({
+        where: { product: { storeId } },
+      });
+    },
+
+    async getProductSourcing(productId) {
+      return db.productSourcing.findFirst({
+        where: { productId, product: { storeId } },
+      });
+    },
+
+    async saveProductSourcing(productId, input) {
+      const product = await db.product.findFirst({
+        where: { id: productId, storeId },
+        select: { id: true },
+      });
+      if (!product) {
+        throw new Error(`Товар ${productId} не найден`);
+      }
+      return db.productSourcing.upsert({
+        where: { productId },
+        update: input,
+        create: { ...input, productId },
+      });
     },
 
     async listBonusAccruals(params = {}) {
@@ -160,6 +201,19 @@ export function createDbDataStore(storeId: string): DataStore {
     async listStockSnapshots(params = {}) {
       const { dateFrom, dateTo } = params;
       return db.stockSnapshot.findMany({
+        where: {
+          storeId,
+          ...(dateFrom || dateTo
+            ? { date: { ...(dateFrom ? { gte: dateFrom } : {}), ...(dateTo ? { lte: dateTo } : {}) } }
+            : {}),
+        },
+        orderBy: { date: "asc" },
+      });
+    },
+
+    async listAdSpend(params = {}) {
+      const { dateFrom, dateTo } = params;
+      return db.adSpend.findMany({
         where: {
           storeId,
           ...(dateFrom || dateTo

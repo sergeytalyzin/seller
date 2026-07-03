@@ -29,14 +29,58 @@ model Store {
 
   user User @relation(fields: [userId], references: [id])
 
-  ozonSettings      OzonSettings?
-  storeSettings     StoreSettings?
-  products          Product[]
-  financeOperations FinanceOperation[]
-  fboPostings       FboPosting[]
-  expenses          Expense[]
-  bonusAccruals     BonusAccrual[]
-  stockSnapshots    StockSnapshot[]
+  ozonSettings        OzonSettings?
+  performanceSettings PerformanceSettings?
+  storeSettings       StoreSettings?
+  products            Product[]
+  financeOperations   FinanceOperation[]
+  fboPostings         FboPosting[]
+  expenses            Expense[]
+  bonusAccruals       BonusAccrual[]
+  stockSnapshots      StockSnapshot[]
+  adSpends            AdSpend[]
+}
+
+// Ключи Ozon Performance API (рекламный кабинет), отдельные от Seller API
+model PerformanceSettings {
+  id           String   @id @default(cuid())
+  storeId      String   @unique
+  clientId     String
+  clientSecret String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id])
+}
+
+// Дневная рекламная статистика по товару из Performance API
+// (аналог листа «Трафареты» в эталонном Excel)
+model AdSpend {
+  id            String   @id @default(cuid())
+  storeId       String
+  productId     String?
+  date          DateTime // день, 00:00 UTC
+  sku           String
+  campaignId    String
+  campaignTitle String?
+  // Тип кампании: SKU (оплата за клик) | SEARCH_PROMO (оплата за заказ)
+  campaignType  String
+  views         Int      @default(0)
+  clicks        Int      @default(0)
+  toCart        Int      @default(0)
+  // Расход, ₽
+  spent         Float    @default(0)
+  // Заказы с рекламы и их сумма по атрибуции Ozon
+  orders        Int      @default(0)
+  ordersMoney   Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  store   Store    @relation(fields: [storeId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@unique([storeId, campaignId, sku, date])
+  @@index([storeId, date])
 }
 
 // Параметры расчёта прибыли на уровне магазина (в Excel — шапка листа «1. UNIT»)
@@ -49,10 +93,58 @@ model StoreSettings {
   vatPercent Float @default(0)
   // Накладные расходы на единицу товара, ₽ (Excel '1. UNIT'!H3)
   overheadPerUnit Float @default(0)
+  // Закупка в Китае (Excel «Просчет новинок», шапка)
+  // Комиссия посредника + страховка, %
+  agentCommissionPercent Float @default(0)
+  // Ставка международной логистики, $/кг
+  logisticsRatePerKgUsd Float @default(0)
+  // Надбавка к курсу ЦБ, % (посредники продают валюту дороже официального курса)
+  currencyMarkupPercent Float @default(0)
+  // Фиксированные курсы: если заданы — используются вместо курса ЦБ
+  manualCnyRate Float?
+  manualUsdRate Float?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   store Store @relation(fields: [storeId], references: [id])
+}
+
+// Кэш курсов ЦБ РФ по дням (общий для всех магазинов)
+model CurrencyRate {
+  id        String   @id @default(cuid())
+  date      DateTime // день, 00:00 UTC
+  currency  String // "CNY" | "USD"
+  rate      Float // ₽ за 1 единицу валюты
+  createdAt DateTime @default(now())
+
+  @@unique([date, currency])
+  @@index([currency, date])
+}
+
+// Параметры закупки товара в Китае (Excel «0. Наши остатки и СС» + «Просчет новинок»)
+model ProductSourcing {
+  id        String  @id @default(cuid())
+  productId String  @unique
+  // Ссылка на товар 1688 и комментарий для посредника
+  link1688     String?
+  agentComment String?
+  // Слагаемые себестоимости
+  priceCny                Float @default(0)
+  weightKg                Float @default(0)
+  unitsPerBox             Int   @default(1)
+  chinaLogisticsPerBoxCny Float @default(0)
+  packagingPerBoxUsd      Float @default(0)
+  rfLogisticsPerUnit      Float @default(0)
+  // Считать поле «Закупка» себестоимости автоматически из этих параметров
+  autoCost Boolean @default(false)
+  // Стадии до FBO для «Денег в товаре»: закуплено в Китае / в пути / наш склад
+  qtyPurchasing   Int @default(0)
+  qtyInTransit    Int @default(0)
+  qtyOwnWarehouse Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id])
 }
 
 // Баллы Ozon за скидки (соплатёж) — вводятся вручную, уменьшают налоговую базу
@@ -120,9 +212,11 @@ model Product {
   store Store @relation(fields: [storeId], references: [id])
 
   cost              ProductCost?
+  sourcing          ProductSourcing?
   financeOperations FinanceOperation[]
   fboPostings       FboPosting[]
   stockSnapshots    StockSnapshot[]
+  adSpends          AdSpend[]
 
   @@unique([storeId, offerId])
   @@index([storeId, sku])

@@ -245,7 +245,37 @@ export function DashboardView() {
         <MetricCard
           label="Деньги в товаре"
           value={formatMoney(metrics.stockValue)}
-          sub={`себестоимость остатков FBO и в пути · ${formatNumber(metrics.stockUnits)} шт доступно`}
+          sub={`себестоимость остатков: Китай → наш склад → FBO · ${formatNumber(metrics.stockUnits)} шт на FBO`}
+        />
+        <MetricCard
+          label="Реклама (ДРР)"
+          value={formatMoney(metrics.adSpend)}
+          valueClassName={
+            (metrics.drrPercent ?? 0) > 10 ? "text-amber-300" : "text-text-primary"
+          }
+          sub={
+            metrics.drrPercent != null
+              ? `ДРР ${formatPercent(metrics.drrPercent)} — расход к выручке`
+              : "подключите Performance API на странице «Реклама»"
+          }
+        />
+        <MetricCard
+          label="Курс юаня (ЦБ)"
+          value={metrics.cnyRate != null ? `${metrics.cnyRate.toFixed(2)} ₽` : "—"}
+          valueClassName={
+            (metrics.cnyRateChange30dPercent ?? 0) > 3
+              ? "text-amber-300"
+              : "text-text-primary"
+          }
+          sub={
+            metrics.cnyRateChange30dPercent != null
+              ? `${metrics.cnyRateChange30dPercent > 0 ? "+" : ""}${metrics.cnyRateChange30dPercent.toFixed(1)}% за 30 дней${
+                  metrics.cnyRateChange30dPercent > 3
+                    ? " — проверьте маржу товаров из Китая"
+                    : ""
+                }`
+              : "история курса накапливается"
+          }
         />
         <Link
           href="/products"

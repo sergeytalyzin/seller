@@ -12,7 +12,9 @@ import { calcMarginPercent } from "@/lib/analytics/margin";
 import { calcProductUnitCost } from "@/lib/analytics/profit";
 import { calcTaxes } from "@/lib/analytics/tax";
 import { calcAvgSalePrice, calcBuyoutPercent } from "@/lib/analytics/sku-metrics";
+import { calcDrrPercent } from "@/lib/analytics/drr";
 import { EXPENSE_CATEGORY_LABELS } from "@/lib/analytics/operation-classifier";
+import { getCnyRateChangePercent, getCurrencyRates } from "@/server/currency";
 import { buildProductAnalytics } from "./analytics-service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -171,6 +173,20 @@ export async function buildDashboard(
     if (posting.status === "cancelled") cancelledQty += posting.quantity;
   }
 
+  // Курс юаня для сигнала о росте себестоимости; ошибки не критичны
+  let cnyRate: number | null = null;
+  let cnyRateChange30dPercent: number | null = null;
+  try {
+    const [rates, change] = await Promise.all([
+      getCurrencyRates(),
+      getCnyRateChangePercent(30),
+    ]);
+    cnyRate = rates?.cnyRate ?? null;
+    cnyRateChange30dPercent = change;
+  } catch (error) {
+    console.error("dashboard currency", error);
+  }
+
   const metrics: DashboardMetrics = {
     revenue,
     payout: analytics.reduce((s, p) => s + p.payout, 0) - storeDeductions,
@@ -203,6 +219,13 @@ export async function buildDashboard(
     stockUnits: analytics.reduce(
       (s, p) => s + (p.stockAvailableQty ?? 0),
       0,
+    ),
+    cnyRate,
+    cnyRateChange30dPercent,
+    adSpend: analytics.reduce((s, p) => s + p.adSpend, 0),
+    drrPercent: calcDrrPercent(
+      analytics.reduce((s, p) => s + p.adSpend, 0),
+      netSales,
     ),
   };
 

@@ -62,6 +62,17 @@ export type ProductAnalytics = {
   marginPercent: number;
   roiPercent: number;
 
+  /** Расход на рекламу по SKU из Performance API за период, ₽ */
+  adSpend: number;
+  /** ДРР: расход рекламы / выручка товара, % */
+  drrPercent: number | null;
+  /** ДРР с учётом процента выкупа, % */
+  drrWithBuyoutPercent: number | null;
+  /** Стоимость получения одного заказа, ₽ */
+  cpo: number | null;
+  /** Чистая прибыль минус реклама по SKU из рекламного кабинета */
+  netProfitWithAds: number;
+
   /** Средняя цена продажи за период */
   avgSalePrice: number | null;
   /** Прибыль на 1 проданную единицу */
@@ -77,7 +88,13 @@ export type ProductAnalytics = {
   stockAvailableQty: number | null;
   /** Запас в днях: остаток / скорость продаж */
   stockDays: number | null;
-  /** Деньги в товаре: (доступно + в пути) × себестоимость единицы */
+  /** Стадии до FBO (вводятся вручную в блоке «Закупка»): закуплено в Китае */
+  stockPurchasingQty: number;
+  /** В пути из Китая, шт */
+  stockInTransitChinaQty: number;
+  /** На нашем складе, шт */
+  stockOwnWarehouseQty: number;
+  /** Деньги в товаре: (все стадии + FBO + в пути) × себестоимость единицы */
   stockValue: number | null;
 
   /** Плановая прибыль с единицы при текущей цене; null — нет цены или данных */
@@ -136,8 +153,16 @@ export type DashboardMetrics = {
   taxAmount: number;
   /** Невязка: начисления Ozon, не попавшие ни в одну категорию */
   unclassified: number;
-  /** Деньги в товаре: себестоимость остатков на FBO и в пути */
+  /** Деньги в товаре: себестоимость остатков по всем стадиям (Китай → FBO) */
   stockValue: number;
   /** Штук на FBO и в пути (по товарам с заполненной себестоимостью и без) */
   stockUnits: number;
+  /** Курс ¥ ЦБ РФ на сегодня; null — курс ещё не загружался */
+  cnyRate: number | null;
+  /** Изменение курса ¥ за 30 дней, %; null — истории нет */
+  cnyRateChange30dPercent: number | null;
+  /** Расход на рекламу из Performance API за период, ₽ */
+  adSpend: number;
+  /** ДРР магазина: расход рекламы / выручка, % */
+  drrPercent: number | null;
 };

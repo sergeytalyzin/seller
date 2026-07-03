@@ -9,6 +9,14 @@ import {
 import { fetchOzonFboPostings } from "@/server/ozon/postings";
 import { fetchOzonStocksSummary } from "@/server/ozon/stocks";
 import { financeOperationSchema } from "@/server/ozon/schemas";
+import {
+  fetchCpcSkuDaily,
+  fetchPerformanceCampaigns,
+  fetchSearchPromoOrders,
+  MAX_REPORT_DAYS,
+  type AdSpendRow,
+  type PerformanceCredentials,
+} from "@/server/performance/client";
 
 export type SyncResult = {
   success: boolean;
@@ -311,6 +319,129 @@ export async function syncFboPostings(
   return result;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Рекламная статистика из Performance API: дневной расход по SKU
+ * (аналог листа «Трафареты» в Excel). Возвращает число обновлённых строк;
+ * 0 — ключи Performance API не настроены.
+ */
+export async function syncPerformanceStats(
+  storeId: string,
+  dateFrom: Date,
+  dateTo: Date,
+): Promise<number> {
+  const settings = await db.performanceSettings.findUnique({
+    where: { storeId },
+  });
+  if (!settings) return 0;
+
+  const credentials: PerformanceCredentials = {
+    clientId: settings.clientId,
+    clientSecret: settings.clientSecret,
+  };
+
+  const campaigns = await fetchPerformanceCampaigns(credentials);
+  const cpcCampaignIds = campaigns
+    .filter((c) => c.advObjectType === "SKU")
+    .map((c) => c.id);
+  const hasSearchPromo = campaigns.some(
+    (c) => c.advObjectType === "SEARCH_PROMO",
+  );
+  const campaignById = new Map(campaigns.map((c) => [c.id, c]));
+
+  // Лимит Performance API — 62 дня на выгрузку: режем период на куски
+  const rows: AdSpendRow[] = [];
+  let cursor = dateFrom.getTime();
+  while (cursor <= dateTo.getTime()) {
+    const chunkEnd = Math.min(
+      cursor + (MAX_REPORT_DAYS - 1) * DAY_MS,
+      dateTo.getTime(),
+    );
+    const chunkFrom = new Date(cursor);
+    const chunkTo = new Date(chunkEnd);
+
+    if (cpcCampaignIds.length > 0) {
+      rows.push(
+        ...(await fetchCpcSkuDaily(credentials, cpcCampaignIds, chunkFrom, chunkTo)),
+      );
+    }
+    if (hasSearchPromo) {
+      try {
+        rows.push(
+          ...(await fetchSearchPromoOrders(credentials, chunkFrom, chunkTo)),
+        );
+      } catch (error) {
+        // Отчёт «оплата за заказ» не критичен: расход всё равно попадает
+        // в чистую прибыль из финансовых операций Seller API
+        console.error("fetchSearchPromoOrders", error);
+      }
+    }
+
+    cursor = chunkEnd + DAY_MS;
+  }
+
+  // Отчёт по заказам может дать несколько строк на SKU за день — агрегируем
+  const aggregated = new Map<string, AdSpendRow>();
+  for (const row of rows) {
+    const key = `${row.campaignId}|${row.sku}|${row.date.toISOString()}`;
+    const entry = aggregated.get(key);
+    if (!entry) {
+      aggregated.set(key, { ...row });
+    } else {
+      entry.views += row.views;
+      entry.clicks += row.clicks;
+      entry.toCart += row.toCart;
+      entry.spent += row.spent;
+      entry.orders += row.orders;
+      entry.ordersMoney += row.ordersMoney;
+    }
+  }
+
+  const products = await db.product.findMany({
+    where: { storeId, sku: { not: null } },
+    select: { id: true, sku: true },
+  });
+  const productBySku = new Map(products.map((p) => [p.sku as string, p.id]));
+
+  let upserted = 0;
+  for (const row of aggregated.values()) {
+    const campaign = campaignById.get(row.campaignId);
+    const data = {
+      productId: productBySku.get(row.sku) ?? null,
+      campaignTitle: campaign?.title ?? null,
+      campaignType: campaign?.advObjectType ?? "SEARCH_PROMO",
+      views: row.views,
+      clicks: row.clicks,
+      toCart: row.toCart,
+      spent: row.spent,
+      orders: row.orders,
+      ordersMoney: row.ordersMoney,
+    };
+    await db.adSpend.upsert({
+      where: {
+        storeId_campaignId_sku_date: {
+          storeId,
+          campaignId: row.campaignId,
+          sku: row.sku,
+          date: row.date,
+        },
+      },
+      update: data,
+      create: {
+        ...data,
+        storeId,
+        campaignId: row.campaignId,
+        sku: row.sku,
+        date: row.date,
+      },
+    });
+    upserted += 1;
+  }
+
+  return upserted;
+}
+
 export async function syncAll(
   storeId: string,
   dateFrom: Date,
@@ -360,6 +491,23 @@ export async function syncAll(
   } catch (error) {
     console.error("syncStockSnapshots", error);
     result.errors.push("Не удалось сохранить снимок остатков");
+  }
+
+  // Обновление курса ЦБ и пересчёт автосебестоимости из закупки
+  try {
+    const { recalcAutoSourcingCosts } = await import("./sourcing-service");
+    await recalcAutoSourcingCosts(storeId);
+  } catch (error) {
+    console.error("recalcAutoSourcingCosts", error);
+    result.errors.push("Не удалось пересчитать себестоимость из закупки");
+  }
+
+  // Рекламная статистика Performance API (если ключи настроены)
+  try {
+    await syncPerformanceStats(storeId, dateFrom, dateTo);
+  } catch (error) {
+    console.error("syncPerformanceStats", error);
+    result.errors.push("Не удалось загрузить статистику рекламы");
   }
 
   return result;

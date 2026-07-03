@@ -178,9 +178,13 @@ export function ProductsTable({
                 </td>
                 <td
                   className="px-3 py-2.5 text-right tabular-nums text-text-secondary"
-                  title="Продвижение, списанное с баланса Seller API"
+                  title={
+                    p.drrPercent != null
+                      ? `Расход из рекламного кабинета · ДРР ${formatPercent(p.drrPercent)}`
+                      : "Расход из рекламного кабинета за период"
+                  }
                 >
-                  {formatMoney(p.advertising)}
+                  {formatMoney(p.adSpend > 0 ? p.adSpend : p.advertising)}
                 </td>
                 <td
                   className="px-3 py-2.5 text-right tabular-nums text-text-secondary"

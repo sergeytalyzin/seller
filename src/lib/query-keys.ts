@@ -8,4 +8,8 @@ export const queryKeys = {
   ozonSettings: ["ozon-settings"] as const,
   storeSettings: ["store-settings"] as const,
   bonusPoints: ["bonus-points"] as const,
+  currency: ["currency"] as const,
+  productSourcing: (id: string) => ["product-sourcing", id] as const,
+  advertising: (period: string) => ["advertising", period] as const,
+  performanceSettings: ["performance-settings"] as const,
 };

@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { Product, ProductCost } from "@/types/product";
+import type { ProductSourcing } from "@/types/sourcing";
 import type { FboPosting } from "@/types/posting";
 import type { ProductAnalytics, ProductUnitEconomics } from "@/types/analytics";
 import type { StoreSettings } from "@/types/settings";
@@ -30,6 +31,11 @@ import {
 } from "@/lib/analytics/sku-metrics";
 import { calcSalesVelocity, type DailySalesPoint } from "@/lib/analytics/stock";
 import { calcUnitEconomics } from "@/lib/analytics/unit-economics";
+import {
+  calcCpo,
+  calcDrrPercent,
+  calcDrrWithBuyoutPercent,
+} from "@/lib/analytics/drr";
 import type { OperationTotals } from "@/lib/analytics/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -114,6 +120,7 @@ function buildUnitEconomics(
   totals: OperationTotals,
   unitCost: number,
   ctx: StoreContext,
+  adSpend: number,
 ): ProductUnitEconomics | null {
   if (price == null || price <= 0) return null;
   const netSales = totals.grossRevenue - totals.returnAmount;
@@ -128,6 +135,9 @@ function buildUnitEconomics(
     usnPercent: ctx.settings.usnPercent,
   }).taxAmount;
 
+  // ДРР: из рекламного кабинета; если данных нет — из финансовых операций
+  const adTotal = adSpend > 0 ? adSpend : totals.advertising;
+
   return calcUnitEconomics({
     price,
     commissionPercent: (totals.commission / netSales) * 100,
@@ -137,20 +147,33 @@ function buildUnitEconomics(
     unitCost,
     overheadPerUnit: ctx.settings.overheadPerUnit,
     taxPerUnit,
-    drrPercent: (totals.advertising / netSales) * 100,
+    drrPercent: (adTotal / netSales) * 100,
   });
 }
 
 function buildAnalyticsForProduct(params: {
   product: Product;
   cost: ProductCost | null;
+  sourcing: ProductSourcing | null;
   totals: OperationTotals;
   postings: FboPosting[];
   salesVelocity: number | null;
   stock: ProductStockInfo;
+  /** Расход рекламы по SKU из Performance API за период, ₽ */
+  adSpend: number;
   ctx: StoreContext;
 }): ProductAnalytics {
-  const { product, cost, totals, postings, salesVelocity, stock, ctx } = params;
+  const {
+    product,
+    cost,
+    sourcing,
+    totals,
+    postings,
+    salesVelocity,
+    stock,
+    adSpend,
+    ctx,
+  } = params;
 
   const totalOzonExpenses = calcTotalOzonExpenses(totals);
   const payout = calcPayout(totals);
@@ -181,7 +204,19 @@ function buildAnalyticsForProduct(params: {
   const marginPercent = calcMarginPercent(netProfit, totals.grossRevenue);
 
   const buyout = countBuyout(postings);
-  const stockUnits = stock ? stock.availableQty + stock.transitQty : null;
+  const buyoutPercent = calcBuyoutPercent(buyout.delivered, buyout.cancelled);
+  const orderedQuantity = countOrderedQuantity(postings);
+  // ДРР по товару — расход из рекламного кабинета к выручке за период
+  const drrPercent = calcDrrPercent(adSpend, netSales);
+  // Деньги в товаре: ручные стадии (Китай → наш склад) + FBO и в пути на FBO
+  const stageUnits =
+    (sourcing?.qtyPurchasing ?? 0) +
+    (sourcing?.qtyInTransit ?? 0) +
+    (sourcing?.qtyOwnWarehouse ?? 0);
+  const stockUnits =
+    stock || stageUnits > 0
+      ? (stock?.availableQty ?? 0) + (stock?.transitQty ?? 0) + stageUnits
+      : null;
 
   return {
     productId: product.id,
@@ -193,8 +228,8 @@ function buildAnalyticsForProduct(params: {
 
     soldQuantity,
     returnedQuantity: totals.returnedQuantity,
-    orderedQuantity: countOrderedQuantity(postings),
-    buyoutPercent: calcBuyoutPercent(buyout.delivered, buyout.cancelled),
+    orderedQuantity,
+    buyoutPercent,
     grossRevenue: totals.grossRevenue,
 
     commission: totals.commission,
@@ -230,6 +265,12 @@ function buildAnalyticsForProduct(params: {
     // Excel B83: ЧП / (себестоимость + накладные)
     roiPercent: calcRoiPercent(netProfit, totalProductCost + overheadCost),
 
+    adSpend,
+    drrPercent,
+    drrWithBuyoutPercent: calcDrrWithBuyoutPercent(drrPercent, buyoutPercent),
+    cpo: calcCpo(adSpend, orderedQuantity),
+    netProfitWithAds: netProfit - adSpend,
+
     avgSalePrice: calcAvgSalePrice(netSales, soldQuantity),
     profitPerUnit: hasCost ? calcProfitPerUnit(netProfit, soldQuantity) : null,
     markup: hasCost ? calcMarkup(netSales, totalProductCost) : null,
@@ -244,9 +285,12 @@ function buildAnalyticsForProduct(params: {
       stock && salesVelocity != null && salesVelocity > 0
         ? stock.availableQty / salesVelocity
         : null,
+    stockPurchasingQty: sourcing?.qtyPurchasing ?? 0,
+    stockInTransitChinaQty: sourcing?.qtyInTransit ?? 0,
+    stockOwnWarehouseQty: sourcing?.qtyOwnWarehouse ?? 0,
     stockValue: hasCost && stockUnits != null ? stockUnits * unitCost : null,
 
-    unitEconomics: buildUnitEconomics(product.price, totals, unitCost, ctx),
+    unitEconomics: buildUnitEconomics(product.price, totals, unitCost, ctx, adSpend),
 
     status: getProfitStatus({ hasCost, netProfit, marginPercent }),
   };
@@ -298,18 +342,44 @@ export async function buildProductAnalytics(
   const store = getDataStore(storeId);
   const now = new Date();
 
-  const [products, costs, operations, postings, settings, bonusAccruals, velocity] =
-    await Promise.all([
-      store.listProducts(),
-      store.listProductCosts(),
-      store.listFinanceOperations(range),
-      store.listFboPostings(range),
-      store.getStoreSettings(),
-      store.listBonusAccruals(range),
-      loadVelocityData(store, now),
-    ]);
+  const [
+    products,
+    costs,
+    sourcings,
+    operations,
+    postings,
+    settings,
+    bonusAccruals,
+    velocity,
+    adSpends,
+  ] = await Promise.all([
+    store.listProducts(),
+    store.listProductCosts(),
+    store.listProductSourcing(),
+    store.listFinanceOperations(range),
+    store.listFboPostings(range),
+    store.getStoreSettings(),
+    store.listBonusAccruals(range),
+    loadVelocityData(store, now),
+    store.listAdSpend(range),
+  ]);
 
   const costByProduct = new Map(costs.map((c) => [c.productId, c]));
+  const sourcingByProduct = new Map(sourcings.map((s) => [s.productId, s]));
+
+  // Расход рекламы по товару: привязка по productId, запасной вариант — по SKU
+  const adSpendByProduct = new Map<string, number>();
+  const adSpendBySku = new Map<string, number>();
+  for (const row of adSpends) {
+    if (row.productId) {
+      adSpendByProduct.set(
+        row.productId,
+        (adSpendByProduct.get(row.productId) ?? 0) + row.spent,
+      );
+    } else {
+      adSpendBySku.set(row.sku, (adSpendBySku.get(row.sku) ?? 0) + row.spent);
+    }
+  }
   const opsByProduct = groupBy(operations, (op) => op.productId);
   const postingsByProduct = groupBy(postings, (p) => p.productId);
   const velocityPostingsByProduct = groupBy(velocity.postings, (p) => p.productId);
@@ -342,6 +412,7 @@ export async function buildProductAnalytics(
     buildAnalyticsForProduct({
       product,
       cost: costByProduct.get(product.id) ?? null,
+      sourcing: sourcingByProduct.get(product.id) ?? null,
       totals: totalsByProduct.get(product.id) as OperationTotals,
       postings: postingsByProduct.get(product.id) ?? [],
       salesVelocity: buildVelocity(
@@ -350,6 +421,9 @@ export async function buildProductAnalytics(
         now,
       ),
       stock: product.sku ? (stockBySku.get(product.sku) ?? null) : null,
+      adSpend:
+        (adSpendByProduct.get(product.id) ?? 0) +
+        (product.sku ? (adSpendBySku.get(product.sku) ?? 0) : 0),
       ctx,
     }),
   );

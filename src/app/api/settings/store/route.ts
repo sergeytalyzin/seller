@@ -40,6 +40,11 @@ export async function PUT(request: NextRequest) {
     const settings = await getDataStore(ctx.store.id).saveStoreSettings(
       parsed.data,
     );
+    // Комиссия посредника/курсы влияют на автосебестоимость
+    const { recalcAutoSourcingCosts } = await import(
+      "@/server/services/sourcing-service"
+    );
+    await recalcAutoSourcingCosts(ctx.store.id);
     return NextResponse.json(settings);
   } catch (error) {
     console.error("PUT /api/settings/store", error);

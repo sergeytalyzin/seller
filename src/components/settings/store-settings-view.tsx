@@ -53,7 +53,37 @@ const taxFields = [
   },
 ] as const;
 
-type TaxFieldKey = (typeof taxFields)[number]["key"];
+const sourcingFields = [
+  {
+    key: "agentCommissionPercent",
+    label: "Комиссия посредника + страховка, %",
+    hint: "Например, 4,5",
+  },
+  {
+    key: "logisticsRatePerKgUsd",
+    label: "Международная логистика, $/кг",
+    hint: "Ставка карго Китай → РФ",
+  },
+  {
+    key: "currencyMarkupPercent",
+    label: "Надбавка к курсу ЦБ, %",
+    hint: "Посредники продают валюту дороже официального курса",
+  },
+  {
+    key: "manualCnyRate",
+    label: "Фиксированный курс ¥, ₽ (необязательно)",
+    hint: "Если заполнить оба курса — они используются вместо курса ЦБ",
+  },
+  {
+    key: "manualUsdRate",
+    label: "Фиксированный курс $, ₽ (необязательно)",
+    hint: "Оставьте пустым для автоматического курса ЦБ",
+  },
+] as const;
+
+type TaxFieldKey =
+  | (typeof taxFields)[number]["key"]
+  | (typeof sourcingFields)[number]["key"];
 
 function TaxSettingsForm() {
   const { data: settings, isPending } = useStoreSettings();
@@ -72,6 +102,11 @@ function TaxSettingsFormInner({ initial }: { initial: StoreSettings }) {
     usnPercent: String(initial.usnPercent),
     vatPercent: String(initial.vatPercent),
     overheadPerUnit: String(initial.overheadPerUnit),
+    agentCommissionPercent: String(initial.agentCommissionPercent),
+    logisticsRatePerKgUsd: String(initial.logisticsRatePerKgUsd),
+    currencyMarkupPercent: String(initial.currencyMarkupPercent),
+    manualCnyRate: initial.manualCnyRate != null ? String(initial.manualCnyRate) : "",
+    manualUsdRate: initial.manualUsdRate != null ? String(initial.manualUsdRate) : "",
   });
   const [errors, setErrors] = useState<Partial<Record<TaxFieldKey, string>>>({});
 
@@ -82,6 +117,13 @@ function TaxSettingsFormInner({ initial }: { initial: StoreSettings }) {
       usnPercent: parseDecimal(values.usnPercent),
       vatPercent: parseDecimal(values.vatPercent),
       overheadPerUnit: parseDecimal(values.overheadPerUnit),
+      agentCommissionPercent: parseDecimal(values.agentCommissionPercent),
+      logisticsRatePerKgUsd: parseDecimal(values.logisticsRatePerKgUsd),
+      currencyMarkupPercent: parseDecimal(values.currencyMarkupPercent),
+      manualCnyRate:
+        values.manualCnyRate.trim() === "" ? null : parseDecimal(values.manualCnyRate),
+      manualUsdRate:
+        values.manualUsdRate.trim() === "" ? null : parseDecimal(values.manualUsdRate),
     });
     if (!parsed.success) {
       const fieldErrors: Partial<Record<TaxFieldKey, string>> = {};
@@ -97,37 +139,52 @@ function TaxSettingsFormInner({ initial }: { initial: StoreSettings }) {
     saveMutation.mutate(parsed.data);
   };
 
+  const renderField = ({
+    key,
+    label,
+    hint,
+  }: {
+    key: TaxFieldKey;
+    label: string;
+    hint: string;
+  }) => (
+    <label key={key} className="block">
+      <span className="mb-1.5 block text-xs font-medium text-text-secondary">
+        {label}
+      </span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={values[key]}
+        onChange={(e) => {
+          setValues((prev) => ({ ...prev, [key]: e.target.value }));
+          setErrors((prev) => ({ ...prev, [key]: undefined }));
+          saveMutation.reset();
+        }}
+        placeholder="0"
+        aria-invalid={errors[key] ? true : undefined}
+        className={inputClass}
+      />
+      <span className="mt-1 block text-xs text-text-muted">
+        {errors[key] ? (
+          <span role="alert" className="text-red-400">
+            {errors[key]}
+          </span>
+        ) : (
+          hint
+        )}
+      </span>
+    </label>
+  );
+
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      {taxFields.map(({ key, label, hint }) => (
-        <label key={key} className="block">
-          <span className="mb-1.5 block text-xs font-medium text-text-secondary">
-            {label}
-          </span>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={values[key]}
-            onChange={(e) => {
-              setValues((prev) => ({ ...prev, [key]: e.target.value }));
-              setErrors((prev) => ({ ...prev, [key]: undefined }));
-              saveMutation.reset();
-            }}
-            placeholder="0"
-            aria-invalid={errors[key] ? true : undefined}
-            className={inputClass}
-          />
-          <span className="mt-1 block text-xs text-text-muted">
-            {errors[key] ? (
-              <span role="alert" className="text-red-400">
-                {errors[key]}
-              </span>
-            ) : (
-              hint
-            )}
-          </span>
-        </label>
-      ))}
+      {taxFields.map(renderField)}
+
+      <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
+        Закупка в Китае
+      </p>
+      {sourcingFields.map(renderField)}
 
       {saveMutation.isError ? (
         <p role="alert" className="text-sm text-red-400">
@@ -318,8 +375,8 @@ export function StoreSettingsView() {
   return (
     <div className="max-w-2xl space-y-4">
       <SectionCard
-        title="Налоги и накладные расходы"
-        description="Налог считается от продаж за вычетом баллов Ozon: сначала выделяется НДС, затем от остатка берётся УСН."
+        title="Налоги, накладные и закупка"
+        description="Налог считается от продаж за вычетом баллов Ozon: сначала выделяется НДС, затем от остатка берётся УСН. Параметры закупки используются для автоматического расчёта себестоимости товаров из Китая (курс ЦБ подтягивается сам)."
       >
         <TaxSettingsForm />
       </SectionCard>

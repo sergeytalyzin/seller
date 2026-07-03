@@ -5,6 +5,7 @@ const PROTECTED_PAGES = [
   "/dashboard",
   "/products",
   "/costs",
+  "/calculator",
   "/advertising",
   "/expenses",
   "/settings",

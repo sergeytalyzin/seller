@@ -9,6 +9,8 @@ import type {
   BonusAccrualInput,
   StoreSettings,
 } from "@/types/settings";
+import type { ProductSourcing, ProductSourcingInput } from "@/types/sourcing";
+import type { AdSpendDaily } from "@/types/advertising";
 import { createDbDataStore } from "./db";
 
 export type DateRange = {
@@ -57,11 +59,20 @@ export type DataStore = {
   getStoreSettings(): Promise<StoreSettings>;
   saveStoreSettings(input: StoreSettings): Promise<StoreSettings>;
 
+  listProductSourcing(): Promise<ProductSourcing[]>;
+  getProductSourcing(productId: string): Promise<ProductSourcing | null>;
+  saveProductSourcing(
+    productId: string,
+    input: ProductSourcingInput,
+  ): Promise<ProductSourcing>;
+
   listBonusAccruals(params?: DateRange): Promise<BonusAccrual[]>;
   createBonusAccrual(input: BonusAccrualInput): Promise<BonusAccrual>;
   deleteBonusAccrual(id: string): Promise<boolean>;
 
   listStockSnapshots(params?: DateRange): Promise<StockSnapshotRow[]>;
+
+  listAdSpend(params?: DateRange): Promise<AdSpendDaily[]>;
 };
 
 export function getDataStore(storeId: string): DataStore {

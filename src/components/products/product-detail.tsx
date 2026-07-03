@@ -18,6 +18,7 @@ import type { ProductCost } from "@/types/product";
 import { ProductThumb } from "./product-thumb";
 import { StatusBadge } from "./status-badge";
 import { CostForm } from "./cost-form";
+import { SourcingForm } from "./sourcing-form";
 import { OperationsTable } from "./operations-table";
 import { WarehousesClustersTable } from "./warehouses-clusters-table";
 
@@ -401,6 +402,16 @@ export function ProductDetail({
                     : "—"}
                 </span>
               </span>
+              {analytics.stockValue != null ? (
+                <span
+                  title={`Себестоимость остатков по стадиям: закуплено ${analytics.stockPurchasingQty} шт · в пути из Китая ${analytics.stockInTransitChinaQty} шт · наш склад ${analytics.stockOwnWarehouseQty} шт · FBO ${analytics.stockAvailableQty ?? 0} шт`}
+                >
+                  Деньги в товаре{" "}
+                  <span className="text-text-secondary">
+                    {formatMoney(analytics.stockValue)}
+                  </span>
+                </span>
+              ) : null}
             </div>
           </div>
         </div>
@@ -544,8 +555,9 @@ export function ProductDetail({
           </div>
         </div>
 
-        <div className="xl:sticky xl:top-24">
+        <div className="space-y-4">
           <CostForm productId={productId} cost={cost} />
+          <SourcingForm productId={productId} />
         </div>
       </div>
     </div>
