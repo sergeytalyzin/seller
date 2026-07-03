@@ -1,26 +1,124 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Палитра из SPEC.md, раздел 8 */
+  --color-bg: #0b0f17;
+  --color-bg-deep: #070a11;
+
+  --color-surface: #111827;
+  --color-surface-soft: #161b26;
+  --color-surface-hover: #1b2230;
+
+  --color-line: #252b37;
+  --color-line-soft: rgba(255, 255, 255, 0.08);
+
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #aab4c0;
+  --color-text-muted: #6b7280;
+
+  --color-electric: #00d4ff;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Тёмная тема — по умолчанию */
+html {
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Светлая тема: включается классом .light на <html>, токены те же */
+html.light {
+  color-scheme: light;
+
+  --color-bg: #f3f5f9;
+  --color-bg-deep: #e8ecf3;
+
+  --color-surface: #ffffff;
+  --color-surface-soft: #f4f6fa;
+  --color-surface-hover: #eceff5;
+
+  --color-line: #dde3ec;
+  --color-line-soft: rgba(15, 23, 42, 0.08);
+
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #46556b;
+  --color-text-muted: #8592a5;
+
+  --color-electric: #0284c7;
+}
+
+/*
+ * Точечные поправки утилит для светлой темы: белые полупрозрачные подложки
+ * и светлые (200–400) акцентные тексты нечитаемы на белом фоне.
+ * Правила вне @layer — перекрывают utilities без !important.
+ */
+html.light .bg-white\/5 {
+  background-color: rgba(15, 23, 42, 0.05);
+}
+html.light .bg-white\/10 {
+  background-color: rgba(15, 23, 42, 0.09);
+}
+html.light .bg-white\/\[0\.02\] {
+  background-color: rgba(15, 23, 42, 0.02);
+}
+html.light .hover\:bg-white\/5:hover {
+  background-color: rgba(15, 23, 42, 0.05);
+}
+html.light .hover\:bg-white\/\[0\.02\]:hover {
+  background-color: rgba(15, 23, 42, 0.02);
+}
+html.light .hover\:bg-white\/\[0\.03\]:hover {
+  background-color: rgba(15, 23, 42, 0.03);
+}
+
+html.light .text-violet-200,
+html.light .text-violet-300 {
+  color: #6d28d9;
+}
+html.light .text-violet-400 {
+  color: #7c3aed;
+}
+html.light .hover\:text-violet-200:hover,
+html.light .hover\:text-violet-300:hover {
+  color: #5b21b6;
+}
+html.light .text-amber-300,
+html.light .text-amber-400 {
+  color: #b45309;
+}
+html.light .text-emerald-300 {
+  color: #047857;
+}
+html.light .text-emerald-400 {
+  color: #059669;
+}
+html.light .text-red-300 {
+  color: #b91c1c;
+}
+html.light .text-red-400,
+html.light .hover\:text-red-400:hover {
+  color: #dc2626;
+}
+html.light .text-red-400\/90 {
+  color: rgba(220, 38, 38, 0.9);
+}
+html.light .text-cyan-400 {
+  color: #0e7490;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background-color: color-mix(in srgb, #8b5cf6 35%, transparent);
+}
+
+/* Тонкий тёмный скроллбар под общий стиль */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
 }

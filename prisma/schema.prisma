@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Supabase: пул соединений (порт 6543) для приложения
+  url = env("DATABASE_URL")
+  // Прямое соединение (порт 5432) для миграций
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stores Store[]
+}
+
+model Store {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  ozonSettings      OzonSettings?
+  products          Product[]
+  financeOperations FinanceOperation[]
+  fboPostings       FboPosting[]
+  expenses          Expense[]
+}
+
+model OzonSettings {
+  id        String   @id @default(cuid())
+  storeId   String   @unique
+  clientId  String
+  apiKey    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id])
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  storeId       String
+  ozonProductId String?
+  offerId       String
+  sku           String?
+  name          String
+  imageUrl      String?
+  price         Float?
+  oldPrice      Float?
+  currency      String?
+  isArchived    Boolean  @default(false)
+  raw           Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  cost              ProductCost?
+  financeOperations FinanceOperation[]
+  fboPostings       FboPosting[]
+
+  @@unique([storeId, offerId])
+  @@index([storeId, sku])
+}
+
+model ProductCost {
+  id            String   @id @default(cuid())
+  productId     String   @unique
+  purchaseCost  Float    @default(0)
+  packagingCost Float    @default(0)
+  deliveryCost  Float    @default(0)
+  taxPercent    Float    @default(0)
+  otherCost     Float    @default(0)
+  comment       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model FinanceOperation {
+  id                String   @id @default(cuid())
+  productId         String?
+  storeId           String
+  ozonOperationId   String
+  operationDate     DateTime
+  operationType     String
+  operationTypeName String?
+  sku               String?
+  offerId           String?
+  productName       String?
+  quantity          Int      @default(0)
+  amount            Float    @default(0)
+  commission        Float    @default(0)
+  logistics         Float    @default(0)
+  acquiring         Float    @default(0)
+  returnAmount      Float    @default(0)
+  penalty           Float    @default(0)
+  otherDeduction    Float    @default(0)
+  raw               Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  product Product? @relation(fields: [productId], references: [id])
+  store   Store    @relation(fields: [storeId], references: [id])
+
+  @@unique([storeId, ozonOperationId])
+  @@index([storeId, operationDate])
+}
+
+// Строка FBO-отправления (заказ со склада Ozon): одно отправление × один товар.
+// Источник — POST /v3/posting/fbo/list; статус обновляется при каждой синхронизации.
+model FboPosting {
+  id            String    @id @default(cuid())
+  storeId       String
+  postingNumber String
+  status        String
+  orderedAt     DateTime // created_at отправления в Ozon
+  inProcessAt   DateTime?
+  productId     String?
+  sku           String?
+  offerId       String?
+  productName   String?
+  quantity      Int       @default(0)
+  raw           Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  store   Store    @relation(fields: [storeId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@unique([storeId, postingNumber, sku])
+  @@index([storeId, orderedAt])
+}
+
+model Expense {
+  id        String   @id @default(cuid())
+  storeId   String
+  title     String
+  category  String
+  amount    Float
+  date      DateTime
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@index([storeId, date])
+}
