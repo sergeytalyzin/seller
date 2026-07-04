@@ -1,8 +1,8 @@
 "use client";
 
-import { periodPresets, type PeriodKey } from "@/lib/period";
+import { periodPresets, type CustomRange, type PeriodKey } from "@/lib/period";
 
-export type CustomRange = { from: string; to: string };
+export type { CustomRange };
 
 export function PeriodFilter({
   value,

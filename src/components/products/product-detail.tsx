@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, PackageX, RotateCw } from "lucide-react";
 import { useProduct, useProductStocks } from "@/hooks/use-product";
 import { ApiError } from "@/lib/api";
-import { DEFAULT_PERIOD_KEY, periodPresets, resolvePeriod, type PeriodKey } from "@/lib/period";
+import { resolvePeriod } from "@/lib/period";
+import { usePeriodStore } from "@/stores/period-store";
 import { formatDate, formatMoney, formatNumber, formatPercent } from "@/lib/format";
-import { PeriodFilter, type CustomRange } from "@/components/dashboard/period-filter";
+import { PeriodFilter } from "@/components/dashboard/period-filter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MetricCard } from "@/components/ui/metric-card";
 import { BarChart, type BarChartPoint } from "@/components/ui/bar-chart";
@@ -236,33 +237,8 @@ function buildDailySeries(
   return { sales, money };
 }
 
-const isPeriodKey = (value: string | undefined): value is PeriodKey =>
-  periodPresets.some((p) => p.key === value);
-
-const isIsoDay = (value: string | undefined): value is string =>
-  /^\d{4}-\d{2}-\d{2}$/.test(value ?? "");
-
-export function ProductDetail({
-  productId,
-  initialPeriodKey,
-  initialCustom,
-}: {
-  productId: string;
-  /** Период из ссылки со страницы /products; невалидные значения игнорируются */
-  initialPeriodKey?: string;
-  initialCustom?: { from: string; to: string };
-}) {
-  const [periodKey, setPeriodKey] = useState<PeriodKey>(
-    isPeriodKey(initialPeriodKey) ? initialPeriodKey : DEFAULT_PERIOD_KEY,
-  );
-  const [custom, setCustom] = useState<CustomRange>(() => {
-    if (isIsoDay(initialCustom?.from) && isIsoDay(initialCustom?.to)) {
-      return { from: initialCustom.from, to: initialCustom.to };
-    }
-    const to = new Date();
-    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-    return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
-  });
+export function ProductDetail({ productId }: { productId: string }) {
+  const { periodKey, custom, setPeriodKey, setCustom } = usePeriodStore();
 
   const range = useMemo(
     () => resolvePeriod(periodKey, custom),

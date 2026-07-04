@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { PackageSearch, Plug2, RotateCw, Search } from "lucide-react";
 import { useProducts } from "@/hooks/use-products";
-import { DEFAULT_PERIOD_KEY, resolvePeriod, type PeriodKey } from "@/lib/period";
+import { resolvePeriod } from "@/lib/period";
+import { usePeriodStore } from "@/stores/period-store";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PeriodFilter, type CustomRange } from "@/components/dashboard/period-filter";
+import { PeriodFilter } from "@/components/dashboard/period-filter";
 import type { ProductAnalytics, ProductProfitStatus } from "@/types/analytics";
 import { statusMeta } from "./status-badge";
 import { ProductsTable, type SortKey, type SortState } from "./products-table";
@@ -68,12 +69,7 @@ function TableSkeleton() {
 }
 
 export function ProductsView() {
-  const [periodKey, setPeriodKey] = useState<PeriodKey>(DEFAULT_PERIOD_KEY);
-  const [custom, setCustom] = useState<CustomRange>(() => {
-    const to = new Date();
-    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-    return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
-  });
+  const { periodKey, custom, setPeriodKey, setCustom } = usePeriodStore();
 
   const range = useMemo(
     () => resolvePeriod(periodKey, custom),
@@ -238,16 +234,7 @@ export function ProductsView() {
           />
         </div>
       ) : (
-        <ProductsTable
-          products={visible}
-          sort={sort}
-          onSort={toggleSort}
-          linkQuery={
-            periodKey === "custom"
-              ? `?period=custom&from=${custom.from}&to=${custom.to}`
-              : `?period=${periodKey}`
-          }
-        />
+        <ProductsTable products={visible} sort={sort} onSort={toggleSort} />
       )}
     </div>
   );

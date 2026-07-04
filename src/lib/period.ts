@@ -10,6 +10,8 @@ export const periodPresets = [
 
 export type PeriodKey = (typeof periodPresets)[number]["key"];
 
+export type CustomRange = { from: string; to: string };
+
 /** Единый период по умолчанию для всех страниц приложения */
 export const DEFAULT_PERIOD_KEY: PeriodKey = "14d";
 
@@ -19,34 +21,43 @@ function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-/** Возвращает границы периода для запроса аналитики */
+/**
+ * Возвращает границы периода для запроса аналитики.
+ *
+ * Границы всегда выровнены по дням (00:00:00.000 — 23:59:59.999): в течение
+ * дня один и тот же пресет даёт одинаковые границы, поэтому ключи кэша
+ * TanStack Query стабильны и переходы между страницами берут данные из кэша.
+ * «N дней» — это N календарных дней, включая сегодняшний.
+ */
 export function resolvePeriod(
   key: PeriodKey,
-  custom?: { from: string; to: string },
+  custom?: CustomRange,
 ): { dateFrom: Date; dateTo: Date } {
-  const now = new Date();
+  const todayStart = startOfDay(new Date());
+  const lastDays = (days: number) => ({
+    dateFrom: new Date(todayStart.getTime() - (days - 1) * DAY_MS),
+    dateTo: new Date(todayStart.getTime() + DAY_MS - 1),
+  });
 
   switch (key) {
     case "today":
-      return { dateFrom: startOfDay(now), dateTo: now };
-    case "yesterday": {
-      const todayStart = startOfDay(now);
+      return lastDays(1);
+    case "yesterday":
       return {
         dateFrom: new Date(todayStart.getTime() - DAY_MS),
-        dateTo: todayStart,
+        dateTo: new Date(todayStart.getTime() - 1),
       };
-    }
     case "7d":
-      return { dateFrom: new Date(now.getTime() - 7 * DAY_MS), dateTo: now };
+      return lastDays(7);
     case "14d":
-      return { dateFrom: new Date(now.getTime() - 14 * DAY_MS), dateTo: now };
+      return lastDays(14);
     case "month":
-      return { dateFrom: new Date(now.getTime() - 30 * DAY_MS), dateTo: now };
+      return lastDays(30);
     case "60d":
-      return { dateFrom: new Date(now.getTime() - 60 * DAY_MS), dateTo: now };
+      return lastDays(60);
     case "custom": {
-      const from = custom?.from ? startOfDay(new Date(custom.from)) : startOfDay(now);
-      const toDay = custom?.to ? startOfDay(new Date(custom.to)) : startOfDay(now);
+      const from = custom?.from ? startOfDay(new Date(custom.from)) : todayStart;
+      const toDay = custom?.to ? startOfDay(new Date(custom.to)) : todayStart;
       // Конец периода — конец выбранного дня
       return { dateFrom: from, dateTo: new Date(toDay.getTime() + DAY_MS - 1) };
     }

@@ -72,13 +72,10 @@ export function ProductsTable({
   products,
   sort,
   onSort,
-  linkQuery = "",
 }: {
   products: ProductAnalytics[];
   sort: SortState;
   onSort: (key: SortKey) => void;
-  /** Query-параметры для ссылок на карточку товара (выбранный период) */
-  linkQuery?: string;
 }) {
   const router = useRouter();
 
@@ -114,7 +111,7 @@ export function ProductsTable({
             return (
               <tr
                 key={p.productId}
-                onClick={() => router.push(`/products/${p.productId}${linkQuery}`)}
+                onClick={() => router.push(`/products/${p.productId}`)}
                 className="cursor-pointer border-b border-line-soft transition-colors last:border-b-0 hover:bg-white/[0.03]"
               >
                 <td className="px-3 py-2.5">
@@ -122,7 +119,7 @@ export function ProductsTable({
                     <ProductThumb name={p.name} imageUrl={p.imageUrl} />
                     <span className="min-w-0">
                       <Link
-                        href={`/products/${p.productId}${linkQuery}`}
+                        href={`/products/${p.productId}`}
                         onClick={(e) => e.stopPropagation()}
                         className="block truncate font-medium text-text-primary hover:text-violet-300"
                       >

@@ -11,9 +11,10 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAdvertising, usePerformanceSettings, useSavePerformanceSettings, useSyncPerformance } from "@/hooks/use-advertising";
-import { DEFAULT_PERIOD_KEY, resolvePeriod, type PeriodKey } from "@/lib/period";
+import { resolvePeriod } from "@/lib/period";
+import { usePeriodStore } from "@/stores/period-store";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/format";
-import { PeriodFilter, type CustomRange } from "@/components/dashboard/period-filter";
+import { PeriodFilter } from "@/components/dashboard/period-filter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MetricCard } from "@/components/ui/metric-card";
 import { ProductThumb } from "@/components/products/product-thumb";
@@ -132,12 +133,7 @@ const headerCell =
   "px-3 py-3 text-right text-xs font-medium uppercase tracking-wide text-text-muted";
 
 export function AdvertisingView() {
-  const [periodKey, setPeriodKey] = useState<PeriodKey>(DEFAULT_PERIOD_KEY);
-  const [custom, setCustom] = useState<CustomRange>(() => {
-    const to = new Date();
-    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-    return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
-  });
+  const { periodKey, custom, setPeriodKey, setCustom } = usePeriodStore();
 
   const range = useMemo(() => resolvePeriod(periodKey, custom), [periodKey, custom]);
   const { data, isPending, isError, error, refetch, isRefetching } =

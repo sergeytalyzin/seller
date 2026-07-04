@@ -1,17 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { ArrowRight, BarChart3, RotateCw } from "lucide-react";
 import { useDashboard } from "@/hooks/use-dashboard";
-import { DEFAULT_PERIOD_KEY, resolvePeriod, type PeriodKey } from "@/lib/period";
+import { resolvePeriod } from "@/lib/period";
+import { usePeriodStore } from "@/stores/period-store";
 import { formatDate, formatMoney, formatNumber, formatPercent } from "@/lib/format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MetricCard } from "@/components/ui/metric-card";
 import { BarChart } from "@/components/ui/bar-chart";
 import { ProductThumb } from "@/components/products/product-thumb";
 import type { ProductAnalytics } from "@/types/analytics";
-import { PeriodFilter, type CustomRange } from "./period-filter";
+import { PeriodFilter } from "./period-filter";
 
 const shortDate = new Intl.DateTimeFormat("ru-RU", {
   day: "2-digit",
@@ -87,12 +88,7 @@ function TopProductsCard({
 }
 
 export function DashboardView() {
-  const [periodKey, setPeriodKey] = useState<PeriodKey>(DEFAULT_PERIOD_KEY);
-  const [custom, setCustom] = useState<CustomRange>(() => {
-    const to = new Date();
-    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-    return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
-  });
+  const { periodKey, custom, setPeriodKey, setCustom } = usePeriodStore();
 
   const range = useMemo(
     () => resolvePeriod(periodKey, custom),
