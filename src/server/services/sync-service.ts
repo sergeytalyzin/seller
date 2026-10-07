@@ -305,48 +305,49 @@ export async function syncFboPostings(
   );
   const productByOffer = new Map(products.map((p) => [p.offerId, p]));
 
-  for (const line of lines) {
-    const product =
-      (line.sku ? productBySku.get(line.sku) : undefined) ??
-      (line.offerId ? productByOffer.get(line.offerId) : undefined);
+  // Перезаливаем период целиком, как и финансовые операции: по строке на
+  // отправление это были бы сотни отдельных запросов к базе, а функция
+  // Vercel живёт 300 секунд. Статусы отправлений при этом тоже обновляются.
+  const windowFrom = new Date(`${dateFrom.toISOString().slice(0, 10)}T00:00:00Z`);
+  const windowTo = new Date(`${dateTo.toISOString().slice(0, 10)}T23:59:59.999Z`);
+  await db.fboPosting.deleteMany({
+    where: { storeId, orderedAt: { gte: windowFrom, lte: windowTo } },
+  });
 
-    const data = {
-      status: line.status,
-      orderedAt: line.orderedAt,
-      inProcessAt: line.inProcessAt,
-      productId: product?.id ?? null,
-      offerId: line.offerId,
-      productName: line.productName,
-      quantity: line.quantity,
-      raw: line.raw as unknown as Prisma.InputJsonValue,
-    };
+  // Один ключ storeId+postingNumber+sku может прийти дважды: товар повторяется
+  // в отправлении — createMany на дубликате упал бы по уникальному индексу
+  const seen = new Set<string>();
+  const unique = lines.filter((line) => {
+    const key = `${line.postingNumber}|${line.sku ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
-    const existing = await db.fboPosting.findUnique({
-      where: {
-        storeId_postingNumber_sku: {
-          storeId,
-          postingNumber: line.postingNumber,
-          sku: line.sku ?? "",
-        },
-      },
-      select: { id: true },
-    });
+  const created = await db.fboPosting.createMany({
+    data: unique.map((line) => {
+      const product =
+        (line.sku ? productBySku.get(line.sku) : undefined) ??
+        (line.offerId ? productByOffer.get(line.offerId) : undefined);
 
-    if (existing) {
-      await db.fboPosting.update({ where: { id: existing.id }, data });
-      result.postingsUpdated += 1;
-    } else {
-      await db.fboPosting.create({
-        data: {
-          ...data,
-          storeId,
-          postingNumber: line.postingNumber,
-          sku: line.sku ?? "",
-        },
-      });
-      result.postingsCreated += 1;
-    }
-  }
+      return {
+        storeId,
+        postingNumber: line.postingNumber,
+        sku: line.sku ?? "",
+        status: line.status,
+        orderedAt: line.orderedAt,
+        inProcessAt: line.inProcessAt,
+        productId: product?.id ?? null,
+        offerId: line.offerId,
+        productName: line.productName,
+        quantity: line.quantity,
+        raw: line.raw as unknown as Prisma.InputJsonValue,
+      };
+    }),
+    skipDuplicates: true,
+  });
+
+  result.postingsCreated = created.count;
 
   return result;
 }
