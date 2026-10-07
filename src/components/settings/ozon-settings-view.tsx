@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckCircle2,
   KeyRound,
@@ -38,6 +38,24 @@ function syncSummary(result: SyncResult): string {
   return parts.join(" · ");
 }
 
+/** Секунды с начала текущей синхронизации: без них спиннер выглядит зависшим */
+function useElapsedSeconds(startedAt: number | null): number {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (startedAt == null) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [startedAt]);
+
+  if (startedAt == null) return 0;
+  return Math.max(0, Math.floor((now - startedAt) / 1000));
+}
+
+function formatElapsed(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 function SectionCard({
   title,
   description,
@@ -67,6 +85,12 @@ export function OzonSettingsView() {
   const [clientId, setClientId] = useState("");
   const [apiKey, setApiKey] = useState("");
 
+  const runningSync = [syncAll, syncProducts, syncFinance].find(
+    (m) => m.isPending,
+  );
+  const anySyncPending = runningSync != null;
+  const elapsed = useElapsedSeconds(runningSync?.submittedAt ?? null);
+
   if (isPending) {
     return (
       <div className="space-y-4">
@@ -86,9 +110,6 @@ export function OzonSettingsView() {
       { onSuccess: () => setApiKey("") },
     );
   };
-
-  const anySyncPending =
-    syncProducts.isPending || syncFinance.isPending || syncAll.isPending;
 
   const lastSync = [syncAll, syncProducts, syncFinance].find(
     (m) => m.isSuccess || m.isError,
@@ -246,6 +267,16 @@ export function OzonSettingsView() {
             Только финансы
           </button>
         </div>
+
+        {anySyncPending ? (
+          <p className="mt-3 flex items-center gap-2 text-sm text-text-secondary">
+            <LoaderCircle className="size-4 shrink-0 animate-spin" aria-hidden />
+            <span>
+              Идёт синхронизация · {formatElapsed(elapsed)} — загрузка за{" "}
+              {SYNC_DAYS} дней занимает до 5 минут. Не закрывайте страницу.
+            </span>
+          </p>
+        ) : null}
 
         {!connected ? (
           <p className="mt-3 text-sm text-text-muted">

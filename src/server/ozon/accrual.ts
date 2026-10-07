@@ -13,8 +13,8 @@ import type { NormalizedOzonOperation } from "./finance";
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Страховка от зацикливания на пагинации by-day */
 const MAX_PAGES_PER_DAY = 100;
-/** Пауза между днями: by-day вызывается по разу на день периода */
-const DAY_PAUSE_MS = 350;
+/** Сколько дней периода тянем одновременно: by-day даёт один день за запрос */
+const DAY_CONCURRENCY = 5;
 /** Ozon отвечает 429 при частых запросах — ждём и повторяем */
 const RETRY_DELAYS_MS = [2_000, 5_000, 15_000];
 
@@ -309,7 +309,8 @@ async function fetchDay(
 
 /**
  * Операции за период из /v1/finance/accrual/by-day.
- * Метод работает по одному дню, поэтому период обходим посуточно.
+ * Метод работает по одному дню, поэтому период обходим посуточно —
+ * пачками по DAY_CONCURRENCY, иначе 90 дней не укладываются в лимит функции.
  */
 export async function fetchOzonAccruals(
   credentials: OzonCredentials,
@@ -317,14 +318,29 @@ export async function fetchOzonAccruals(
   dateTo: Date,
 ): Promise<NormalizedOzonOperation[]> {
   const typeNames = await fetchAccrualTypes(credentials);
-  const operations: NormalizedOzonOperation[] = [];
 
   const start = new Date(`${toIsoDay(dateFrom)}T00:00:00Z`).getTime();
   const end = new Date(`${toIsoDay(dateTo)}T00:00:00Z`).getTime();
 
+  const days: string[] = [];
   for (let t = start; t <= end; t += DAY_MS) {
-    if (t > start) await sleep(DAY_PAUSE_MS);
-    const accruals = await fetchDay(credentials, toIsoDay(new Date(t)));
+    days.push(toIsoDay(new Date(t)));
+  }
+
+  // Результат раскладываем по индексу дня, чтобы порядок не зависел от гонки
+  const perDay: OzonAccrual[][] = new Array(days.length);
+  let next = 0;
+
+  await Promise.all(
+    Array.from({ length: Math.min(DAY_CONCURRENCY, days.length) }, async () => {
+      for (let index = next++; index < days.length; index = next++) {
+        perDay[index] = await fetchDay(credentials, days[index]);
+      }
+    }),
+  );
+
+  const operations: NormalizedOzonOperation[] = [];
+  for (const accruals of perDay) {
     for (const accrual of accruals) {
       operations.push(...normalizeAccrual(accrual, typeNames));
     }
