@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   CheckCircle2,
   KeyRound,
@@ -18,6 +18,7 @@ import {
   useTestOzonConnection,
 } from "@/hooks/use-ozon";
 import { formatDate } from "@/lib/format";
+import { formatElapsed, useElapsedSeconds } from "@/hooks/use-elapsed-seconds";
 import { Badge } from "@/components/ui/badge";
 import { TelegramSettingsCard } from "@/components/settings/telegram-settings-card";
 import type { SyncResult } from "@/server/services/sync-service";
@@ -36,24 +37,6 @@ function syncSummary(result: SyncResult): string {
   }
   if (parts.length === 0) parts.push("новых данных нет");
   return parts.join(" · ");
-}
-
-/** Секунды с начала текущей синхронизации: без них спиннер выглядит зависшим */
-function useElapsedSeconds(startedAt: number | null): number {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (startedAt == null) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [startedAt]);
-
-  if (startedAt == null) return 0;
-  return Math.max(0, Math.floor((now - startedAt) / 1000));
-}
-
-function formatElapsed(seconds: number): string {
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 function SectionCard({
@@ -269,7 +252,7 @@ export function OzonSettingsView() {
         </div>
 
         {anySyncPending ? (
-          <p className="mt-3 flex items-center gap-2 text-sm text-text-secondary">
+          <p className="mt-3 flex items-center gap-2 rounded-lg bg-[#252b37] px-3 py-2 text-sm font-medium text-emerald-400">
             <LoaderCircle className="size-4 shrink-0 animate-spin" aria-hidden />
             <span>
               Идёт синхронизация · {formatElapsed(elapsed)} — загрузка за{" "}

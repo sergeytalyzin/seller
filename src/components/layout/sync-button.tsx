@@ -2,12 +2,28 @@
 
 import { Check, LoaderCircle, RefreshCw } from "lucide-react";
 import { useSyncAll } from "@/hooks/use-ozon";
+import { formatElapsed, useElapsedSeconds } from "@/hooks/use-elapsed-seconds";
 
 export function SyncButton({ disabled }: { disabled: boolean }) {
   const syncAll = useSyncAll();
+  const elapsed = useElapsedSeconds(
+    syncAll.isPending ? syncAll.submittedAt : null,
+  );
 
   return (
     <div className="flex items-center gap-2">
+      {syncAll.isPending ? (
+        <span className="flex items-center gap-2 rounded-lg bg-[#252b37] px-3 py-1.5 text-xs font-medium text-emerald-400">
+          <LoaderCircle className="size-3.5 shrink-0 animate-spin" aria-hidden />
+          <span>
+            Идёт синхронизация · {formatElapsed(elapsed)}
+            <span className="hidden lg:inline">
+              {" "}
+              — загрузка за 90 дней занимает до 5 минут. Не закрывайте страницу.
+            </span>
+          </span>
+        </span>
+      ) : null}
       {syncAll.isError ? (
         <span role="alert" className="hidden max-w-56 truncate text-xs text-red-400 md:block">
           {syncAll.error.message}
