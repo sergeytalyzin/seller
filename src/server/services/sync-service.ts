@@ -480,11 +480,17 @@ export async function syncAll(
   dateTo: Date,
 ): Promise<SyncResult> {
   const result = emptyResult();
+  // Шаги логируем с длительностью: функция падала по таймауту 300 с,
+  // и без этих отметок не видно, какой из них его съедает
+  const startedAt = Date.now();
+  const step = (name: string) =>
+    console.log(`syncAll ${name}: ${Math.round((Date.now() - startedAt) / 1000)}s`);
 
   try {
     const products = await syncProducts(storeId);
     result.productsCreated = products.productsCreated;
     result.productsUpdated = products.productsUpdated;
+    step("товары");
   } catch (error) {
     result.success = false;
     result.errors.push(
@@ -497,6 +503,7 @@ export async function syncAll(
     const finance = await syncFinanceOperations(storeId, dateFrom, dateTo);
     result.operationsCreated = finance.operationsCreated;
     result.operationsUpdated = finance.operationsUpdated;
+    step("финансы");
   } catch (error) {
     result.success = false;
     result.errors.push(
@@ -508,6 +515,7 @@ export async function syncAll(
     const postings = await syncFboPostings(storeId, dateFrom, dateTo);
     result.postingsCreated = postings.postingsCreated;
     result.postingsUpdated = postings.postingsUpdated;
+    step("отправления");
   } catch (error) {
     result.success = false;
     result.errors.push(
@@ -520,6 +528,7 @@ export async function syncAll(
   // Снимок остатков не критичен для остальной аналитики — ошибки не фатальны
   try {
     await syncStockSnapshots(storeId);
+    step("остатки");
   } catch (error) {
     console.error("syncStockSnapshots", error);
     result.errors.push("Не удалось сохранить снимок остатков");
@@ -529,6 +538,7 @@ export async function syncAll(
   try {
     const { recalcAutoSourcingCosts } = await import("./sourcing-service");
     await recalcAutoSourcingCosts(storeId);
+    step("себестоимость");
   } catch (error) {
     console.error("recalcAutoSourcingCosts", error);
     result.errors.push("Не удалось пересчитать себестоимость из закупки");
@@ -537,6 +547,7 @@ export async function syncAll(
   // Рекламная статистика Performance API (если ключи настроены)
   try {
     await syncPerformanceStats(storeId, dateFrom, dateTo);
+    step("реклама");
   } catch (error) {
     console.error("syncPerformanceStats", error);
     result.errors.push("Не удалось загрузить статистику рекламы");
