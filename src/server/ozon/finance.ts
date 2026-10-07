@@ -3,12 +3,13 @@ import {
   classifyService,
   type ExpenseCategory,
 } from "@/lib/analytics/operation-classifier";
-import { ozonRequest, type OzonCredentials } from "./client";
-import {
-  financeTransactionListResponseSchema,
-  type OzonFinanceOperation,
-} from "./schemas";
+import type { OzonAccrual, OzonFinanceOperation } from "./schemas";
 
+/**
+ * Нормализованная операция: общая форма строки FinanceOperation
+ * для нового источника (/v1/finance/accrual/*) и для разбора raw
+ * операций, сохранённых отключённым /v3/finance/transaction/list.
+ */
 export type NormalizedOzonOperation = {
   ozonOperationId: string;
   operationDate: Date;
@@ -30,13 +31,9 @@ export type NormalizedOzonOperation = {
   penalty: number;
   otherDeduction: number;
   unclassified: number;
-  raw: OzonFinanceOperation;
+  /** Исходный ответ Ozon: начисление (новый API) или операция (старый) */
+  raw: OzonAccrual | OzonFinanceOperation;
 };
-
-const PAGE_SIZE = 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
-/** Ozon ограничивает период запроса транзакций одним месяцем */
-const CHUNK_DAYS = 28;
 
 /**
  * Разложение операции Ozon на поля нашей модели по словарю категорий
@@ -126,56 +123,4 @@ export function normalizeOzonOperation(
     unclassified,
     raw: op,
   };
-}
-
-async function fetchChunk(
-  credentials: OzonCredentials,
-  from: Date,
-  to: Date,
-): Promise<NormalizedOzonOperation[]> {
-  const operations: NormalizedOzonOperation[] = [];
-  let page = 1;
-
-  for (;;) {
-    const response = financeTransactionListResponseSchema.parse(
-      await ozonRequest({
-        endpoint: "/v3/finance/transaction/list",
-        body: {
-          filter: {
-            date: { from: from.toISOString(), to: to.toISOString() },
-            transaction_type: "all",
-          },
-          page,
-          page_size: PAGE_SIZE,
-        },
-        credentials,
-      }),
-    );
-
-    operations.push(...response.result.operations.map(normalizeOzonOperation));
-    if (page >= response.result.page_count) break;
-    page += 1;
-  }
-
-  return operations;
-}
-
-/** Операции за период; период режется на куски ≤28 дней (лимит Ozon — месяц) */
-export async function fetchOzonOperations(
-  credentials: OzonCredentials,
-  dateFrom: Date,
-  dateTo: Date,
-): Promise<NormalizedOzonOperation[]> {
-  const operations: NormalizedOzonOperation[] = [];
-
-  let cursor = dateFrom.getTime();
-  while (cursor < dateTo.getTime()) {
-    const chunkEnd = Math.min(cursor + CHUNK_DAYS * DAY_MS, dateTo.getTime());
-    operations.push(
-      ...(await fetchChunk(credentials, new Date(cursor), new Date(chunkEnd))),
-    );
-    cursor = chunkEnd + 1;
-  }
-
-  return operations;
 }

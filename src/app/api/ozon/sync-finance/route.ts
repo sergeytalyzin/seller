@@ -6,6 +6,10 @@ import { syncFinanceOperations } from "@/server/services/sync-service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// /v1/finance/accrual/by-day отдаёт по одному дню за запрос,
+// поэтому синхронизация за 90 дней идёт минутами
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   const ctx = await getUserStore();
   if (!ctx) {

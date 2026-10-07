@@ -12,4 +12,6 @@ export const queryKeys = {
   productSourcing: (id: string) => ["product-sourcing", id] as const,
   advertising: (period: string) => ["advertising", period] as const,
   performanceSettings: ["performance-settings"] as const,
+  telegramSettings: ["telegram-settings"] as const,
+  syncStatus: ["sync-status"] as const,
 };

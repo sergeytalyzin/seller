@@ -19,6 +19,7 @@ import {
 } from "@/hooks/use-ozon";
 import { formatDate } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
+import { TelegramSettingsCard } from "@/components/settings/telegram-settings-card";
 import type { SyncResult } from "@/server/services/sync-service";
 
 const SYNC_DAYS = 90;
@@ -271,6 +272,8 @@ export function OzonSettingsView() {
           </p>
         ) : null}
       </SectionCard>
+
+      <TelegramSettingsCard />
     </div>
   );
 }

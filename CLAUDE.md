@@ -116,12 +116,17 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 1. `api.md`
 2. `swagger.json`
+3. `new-swagger.json`
 
 Правила:
 
 - Сначала проверяй `api.md`.
-- Если данных не хватает — проверяй `swagger.json`.
-- Если endpoint отсутствует в `swagger.json` — не используй его.
-- Если поле, параметр или response не описаны — не придумывай, а пиши `Нужно уточнить`.
-- Если `api.md` и `swagger.json` противоречат друг другу — приоритет у `swagger.json`.
-- Все запросы к Ozon API должны идти только с backend, не с frontend.
+- Затем проверяй `swagger.json`.
+- Если нужный endpoint отсутствует в `swagger.json`, обязательно проверь `new-swagger.json`.
+- `new-swagger.json` содержит актуальные методы Ozon API и может включать методы, которые были изменены, помечены как deprecated или отсутствуют в `swagger.json`.
+- Если endpoint присутствует в `new-swagger.json`, его можно использовать, даже если он отсутствует или deprecated в `swagger.json`.
+- Если endpoint отсутствует и в `swagger.json`, и в `new-swagger.json` — не используй его.
+- Если поле, параметр, request или response не описаны ни в одном из доступных источников — не придумывай, а пиши `Нужно уточнить`.
+- Если `api.md` противоречит Swagger-спецификациям — приоритет у `swagger.json` и `new-swagger.json`.
+- Если `swagger.json` и `new-swagger.json` противоречат друг другу — приоритет у `new-swagger.json`, так как он содержит более актуальную спецификацию.
+- При наличии deprecated-метода обязательно проверь `new-swagger.json` на наличие актуальной замены.

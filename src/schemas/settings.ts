@@ -75,3 +75,20 @@ export const bonusAccrualInputSchema = z.object({
     .nullable()
     .optional(),
 });
+
+/** Чат для ежедневного Telegram-дайджеста */
+export const telegramSettingsInputSchema = z.object({
+  chatId: z
+    .string()
+    .trim()
+    .min(1, "Укажите Chat ID")
+    .max(64, "Слишком длинный Chat ID"),
+  enabled: z.boolean(),
+});
+
+export type TelegramSettingsFormValues = z.infer<
+  typeof telegramSettingsInputSchema
+>;
+
+/** Ответ GET /api/settings/telegram: null, пока чат не сохранён */
+export type TelegramSettingsInfo = TelegramSettingsFormValues | null;

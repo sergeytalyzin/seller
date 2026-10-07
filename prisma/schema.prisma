@@ -39,6 +39,8 @@ model Store {
   bonusAccruals       BonusAccrual[]
   stockSnapshots      StockSnapshot[]
   adSpends            AdSpend[]
+  telegramSettings    TelegramSettings?
+  syncRuns            SyncRun[]
 }
 
 // Ключи Ozon Performance API (рекламный кабинет), отдельные от Seller API
@@ -191,6 +193,32 @@ model OzonSettings {
   updatedAt DateTime @updatedAt
 
   store Store @relation(fields: [storeId], references: [id])
+}
+
+// Чат для ежедневного Telegram-дайджеста
+model TelegramSettings {
+  id        String   @id @default(cuid())
+  storeId   String   @unique
+  chatId    String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id])
+}
+
+// История запусков синхронизации: статус последнего прогона для UI и крона
+model SyncRun {
+  id         String    @id @default(cuid())
+  storeId    String
+  status     String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  errors     String[]  @default([])
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@index([storeId, startedAt])
 }
 
 model Product {

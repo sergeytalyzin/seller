@@ -217,3 +217,167 @@ export function classifyOperation(
   }
   return null;
 }
+
+/**
+ * Тип начисления /v1/finance/accrual/* → категория расхода.
+ * Имена — из справочника /v1/finance/accrual/types (132 типа);
+ * метод пришёл на смену отключённому /v3/finance/transaction/list,
+ * где категории определялись по именам MarketplaceServiceItem*.
+ * Чего нет в словаре — попадает в unclassified, деньги не теряются.
+ */
+const ACCRUAL_TYPE_CATEGORIES: Record<string, ExpenseCategory> = {
+  // Комиссия за продажу и её корректировки
+  SaleCommission: "commission",
+  CorrectionCommission: "commission",
+  ClaimCommission: "commission",
+  RfbsServiceFee: "commission",
+  RfbsDomesticAgentFee: "commission",
+  RfbsGlobalAgentFee: "commission",
+
+  // Эквайринг
+  Acquiring: "acquiring",
+
+  // Прямая логистика: магистраль, сборка, упаковка, приёмка поставки
+  Logistic: "logistics",
+  Fulfillment: "logistics",
+  CrossDock: "logistics",
+  CrossDockPickUpCourierDelivery: "logistics",
+  "Drop-Off": "logistics",
+  "Drop-Off Agent": "logistics",
+  "B2C Drop-Off": "logistics",
+  "B2C Drop-Off Agent": "logistics",
+  Shipment: "logistics",
+  PackageCost: "logistics",
+  PackingFee: "logistics",
+  ItemPacking: "logistics",
+  ItemSealing: "logistics",
+  PackmanCisPacking: "logistics",
+  PackageUnitProcessing: "logistics",
+  B2CContainerPacking: "logistics",
+  B2CContainerPackage: "logistics",
+  B2CLogistics: "logistics",
+  "Pick-Up": "logistics",
+  PickUpCourierArrangement: "logistics",
+  PickUpCourierDelivery: "logistics",
+  CourierPickUpByOzon: "logistics",
+  CourierPickUpReinvoice: "logistics",
+  SupplyInbound: "logistics",
+  Replenishment: "logistics",
+  QuantProcessingDrop: "logistics",
+  VolumeWeightCharacteristicsProcessing: "logistics",
+  OversizedExtraHandling: "logistics",
+  InternationalLogisticDelta: "logistics",
+  OzonGlobalLogisticsDelivery: "logistics",
+  MicroFulfillmentSupply: "logistics",
+  MicroFulfillmentPicking: "logistics",
+  Marking: "logistics",
+  LabelOriginal: "logistics",
+
+  // Последняя миля
+  LastMile: "lastMile",
+  LastMileCourier: "lastMile",
+  LastMilePickUpPoint: "lastMile",
+  DeliveryToHandoverPlaceByOzon: "lastMile",
+  B2CDeliveryToHandoverPlaceByOzon: "lastMile",
+  B2CCourierClientReinvoice: "lastMile",
+  B2CPickUpPointClientReinvoice: "lastMile",
+  ClickAndCollect: "lastMile",
+  RfbsBuyerDelivery: "lastMile",
+  RfbsClientDeliveryCharge: "lastMile",
+  RfbsDomesticDelivery: "lastMile",
+  RfbsGlobalDelivery: "lastMile",
+
+  // Обратная логистика, возвраты, отмены, утилизация
+  BackwardShipment: "returnLogistics",
+  B2CBackwardLogistics: "returnLogistics",
+  ClientReturn: "returnLogistics",
+  SellerReturns: "returnLogistics",
+  PartialReturn: "returnLogistics",
+  PreparingToReturn: "returnLogistics",
+  ReturnFlowLogistic: "returnLogistics",
+  ReturnStorageInTheWarehouse: "returnLogistics",
+  PickUpPointReturnAcceptance: "returnLogistics",
+  B2CPickUpPointReturnAcceptance: "returnLogistics",
+  RfbsEasyReturn: "returnLogistics",
+  Cancellation: "returnLogistics",
+  Disposal: "returnLogistics",
+  B2CDisposal: "returnLogistics",
+
+  // Продвижение
+  PayPerClick: "advertising",
+  Promotion: "advertising",
+  BrandPromotion: "advertising",
+  BrandCommission: "advertising",
+  BrandShelf: "advertising",
+  BrandDeposit: "advertising",
+  Stencil: "advertising",
+  ExternalPromotion: "advertising",
+  InternetSiteAdvertising: "advertising",
+  SocialMediaAdvertising: "advertising",
+  DisplayAdvertisingPlacement: "advertising",
+  Marketing: "advertising",
+  PushCampaign: "advertising",
+  LeadGeneration: "advertising",
+  VideoCover: "advertising",
+  PremiumMailingCommission: "advertising",
+  PremiumCashbackPromotion: "advertising",
+  PremiumCashbackIndividualPoints: "advertising",
+  PointsForReviews: "advertising",
+  SaleReview: "advertising",
+  ReviewsPin: "advertising",
+  AcceleratedReviewCollection: "advertising",
+  FirstCustomerReview: "advertising",
+  CustomerChatPoints: "advertising",
+  LabelBrandVerified: "advertising",
+
+  // Хранение и размещение
+  TemporaryPlacement: "storage",
+  TemporaryPlacementsAgent: "storage",
+  B2CTemporaryPlacement: "storage",
+  Placements: "storage",
+  StockInsurance: "storage",
+
+  // Штрафы
+  DefectRate: "penalty",
+  DefectFineModeration: "penalty",
+  DefectFineProhibitedGoods: "penalty",
+  DefectFineCounterfeitGoods: "penalty",
+  DefectFineComplaint: "penalty",
+  DefectFineErrors: "penalty",
+  DefectFineShipmentDelayRate: "penalty",
+
+  // Прочие услуги и подписки
+  PremiumMembership: "other",
+  PremiumSubscription: "other",
+  StarsMembership: "other",
+  AnalyticsLite: "other",
+  AnalyticsPremium: "other",
+  AnalyticsPlus: "other",
+  AnalyticsPro: "other",
+  AnalyticsCorrection: "other",
+  EarlyPayment: "other",
+  FlexiblePayments: "other",
+  Installment: "other",
+  KazakhstanBuyerInstallment: "other",
+  ItemCloning: "other",
+  ItemCompensation: "other",
+  Compensation: "other",
+  B2CInsuranceCompensation: "other",
+  B2CInsuranceShipping: "other",
+  Moderation: "other",
+  OzonData: "other",
+  SetOff: "other",
+  RealizationReportCorrection: "other",
+  IncreaseAssortmentLimit: "other",
+  VolumeObligationReward: "other",
+  OrdersBooking: "other",
+  Charity: "other",
+  CustomerReviews: "other",
+  RfbsGlobalIntermediaryService: "other",
+  RfbsGlobalPlatformConnectionService: "other",
+};
+
+/** Категория начисления по имени типа; null — тип не распознан */
+export function classifyAccrualType(name: string): ExpenseCategory | null {
+  return ACCRUAL_TYPE_CATEGORIES[name] ?? null;
+}

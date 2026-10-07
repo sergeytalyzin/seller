@@ -2,13 +2,15 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { OzonApiError, type OzonCredentials } from "@/server/ozon/client";
 import { fetchOzonProducts } from "@/server/ozon/products";
+import { normalizeOzonOperation } from "@/server/ozon/finance";
 import {
-  fetchOzonOperations,
-  normalizeOzonOperation,
-} from "@/server/ozon/finance";
+  fetchAccrualTypes,
+  fetchOzonAccruals,
+  normalizeAccrual,
+} from "@/server/ozon/accrual";
 import { fetchOzonFboPostings } from "@/server/ozon/postings";
 import { fetchOzonStocksSummary } from "@/server/ozon/stocks";
-import { financeOperationSchema } from "@/server/ozon/schemas";
+import { accrualSchema, financeOperationSchema } from "@/server/ozon/schemas";
 import {
   fetchCpcSkuDaily,
   fetchPerformanceCampaigns,
@@ -95,7 +97,7 @@ export async function syncFinanceOperations(
 ): Promise<SyncResult> {
   const result = emptyResult();
   const credentials = await getCredentials(storeId);
-  const operations = await fetchOzonOperations(credentials, dateFrom, dateTo);
+  const operations = await fetchOzonAccruals(credentials, dateFrom, dateTo);
 
   // Связь операция → товар по SKU
   const products = await db.product.findMany({
@@ -104,18 +106,23 @@ export async function syncFinanceOperations(
   });
   const productBySku = new Map(products.map((p) => [p.sku as string, p]));
 
-  const existing = await db.financeOperation.findMany({
-    where: { storeId },
-    select: { ozonOperationId: true },
+  // Перезаливаем период целиком: начисления Ozon уточняет задним числом,
+  // а в окне могут лежать строки старого формата из отключённого
+  // /v3/finance/transaction/list — иначе они задвоят суммы.
+  const windowFrom = new Date(`${dateFrom.toISOString().slice(0, 10)}T00:00:00Z`);
+  const windowTo = new Date(`${dateTo.toISOString().slice(0, 10)}T23:59:59.999Z`);
+  const removed = await db.financeOperation.deleteMany({
+    where: { storeId, operationDate: { gte: windowFrom, lte: windowTo } },
   });
-  const existingIds = new Set(existing.map((o) => o.ozonOperationId));
+  if (removed.count > 0) {
+    console.info(
+      `syncFinanceOperations ${storeId}: перезалив ${removed.count} строк за период`,
+    );
+  }
 
-  // На границах месячных кусков Ozon может вернуть операцию дважды
   const seen = new Set<string>();
   const newOperations = operations.filter((op) => {
-    if (existingIds.has(op.ozonOperationId) || seen.has(op.ozonOperationId)) {
-      return false;
-    }
+    if (seen.has(op.ozonOperationId)) return false;
     seen.add(op.ozonOperationId);
     return true;
   });
@@ -157,6 +164,28 @@ export async function syncFinanceOperations(
 }
 
 /**
+ * Пересчёт одной сохранённой строки из её raw.
+ * raw бывает двух видов: начисление нового API (одно начисление даёт
+ * несколько строк, нужную находим по ozonOperationId) и операция
+ * отключённого /v3/finance/transaction/list.
+ */
+function renormalize(
+  ozonOperationId: string,
+  raw: unknown,
+  typeNames: Map<number, string>,
+) {
+  const accrual = accrualSchema.safeParse(raw);
+  if (accrual.success) {
+    return normalizeAccrual(accrual.data, typeNames).find(
+      (op) => op.ozonOperationId === ozonOperationId,
+    );
+  }
+
+  const legacy = financeOperationSchema.safeParse(raw);
+  return legacy.success ? normalizeOzonOperation(legacy.data) : undefined;
+}
+
+/**
  * Переразложение сохранённых операций по категориям из raw-ответа Ozon.
  * Нужно после изменения словаря категорий: старые строки в БД остаются
  * с прежней разбивкой, пока их не пересчитать.
@@ -166,8 +195,12 @@ export async function recategorizeFinanceOperations(
 ): Promise<number> {
   const operations = await db.financeOperation.findMany({
     where: { storeId, raw: { not: Prisma.JsonNull } },
-    select: { id: true, raw: true },
+    select: { id: true, ozonOperationId: true, raw: true },
   });
+
+  // Начисления нового API раскладываются по справочнику типов
+  const credentials = await getCredentials(storeId);
+  const typeNames = await fetchAccrualTypes(credentials);
 
   let updated = 0;
   const BATCH = 25;
@@ -175,9 +208,8 @@ export async function recategorizeFinanceOperations(
     const batch = operations.slice(i, i + BATCH);
     await Promise.all(
       batch.map(async (row) => {
-        const parsed = financeOperationSchema.safeParse(row.raw);
-        if (!parsed.success) return;
-        const op = normalizeOzonOperation(parsed.data);
+        const op = renormalize(row.ozonOperationId, row.raw, typeNames);
+        if (!op) return;
         await db.financeOperation.update({
           where: { id: row.id },
           data: {
@@ -511,4 +543,83 @@ export async function syncAll(
   }
 
   return result;
+}
+
+const SYNC_RUNNING = "running";
+const SYNC_SUCCESS = "success";
+const SYNC_ERROR = "error";
+
+/**
+ * syncAll с записью прогона в SyncRun: нужен крону и индикатору в интерфейсе,
+ * потому что сам syncAll не падает на ошибках отдельных шагов, а копит их в errors.
+ */
+export async function syncAllTracked(
+  storeId: string,
+  dateFrom: Date,
+  dateTo: Date,
+): Promise<SyncResult> {
+  const run = await db.syncRun.create({
+    data: { storeId, status: SYNC_RUNNING },
+  });
+
+  try {
+    const result = await syncAll(storeId, dateFrom, dateTo);
+    await db.syncRun.update({
+      where: { id: run.id },
+      data: {
+        status: result.success ? SYNC_SUCCESS : SYNC_ERROR,
+        finishedAt: new Date(),
+        errors: result.errors,
+      },
+    });
+    return result;
+  } catch (error) {
+    await db.syncRun.update({
+      where: { id: run.id },
+      data: {
+        status: SYNC_ERROR,
+        finishedAt: new Date(),
+        errors: [
+          error instanceof OzonApiError ? error.message : "Синхронизация прервалась",
+        ],
+      },
+    });
+    throw error;
+  }
+}
+
+export type SyncStatus = {
+  /** Прогон начат и ещё не завершился */
+  running: boolean;
+  /** running | success | error; null — синхронизаций ещё не было */
+  status: string | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  errors: string[];
+};
+
+/** Последний прогон синхронизации магазина */
+export async function getSyncStatus(storeId: string): Promise<SyncStatus> {
+  const last = await db.syncRun.findFirst({
+    where: { storeId },
+    orderBy: { startedAt: "desc" },
+  });
+
+  if (!last) {
+    return {
+      running: false,
+      status: null,
+      startedAt: null,
+      finishedAt: null,
+      errors: [],
+    };
+  }
+
+  return {
+    running: last.status === SYNC_RUNNING,
+    status: last.status,
+    startedAt: last.startedAt,
+    finishedAt: last.finishedAt,
+    errors: last.errors,
+  };
 }

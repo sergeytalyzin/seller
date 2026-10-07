@@ -121,7 +121,10 @@ export const fboPostingListResponseSchema = z.object({
               sku: z.number().nullish(),
               offer_id: nullableText,
               name: nullableText,
-              quantity: z.number().nullish().transform((v) => v ?? 0),
+              quantity: z
+                .number()
+                .nullish()
+                .transform((v) => v ?? 0),
             }),
           )
           .optional()
@@ -131,15 +134,18 @@ export const fboPostingListResponseSchema = z.object({
     .optional()
     .default([]),
   cursor: z.string().nullish(),
-  has_next: z.boolean().nullish().transform((v) => v ?? false),
+  has_next: z
+    .boolean()
+    .nullish()
+    .transform((v) => v ?? false),
 });
 
 export type OzonFboPosting = z.infer<
   typeof fboPostingListResponseSchema
 >["postings"][number];
 
-// Операция из POST /v3/finance/transaction/list; используется и для
-// повторной нормализации сохранённого raw
+// Операция отключённого POST /v3/finance/transaction/list: нужна только
+// для повторной нормализации raw, сохранённого до перехода на начисления
 export const financeOperationSchema = z.object({
   operation_id: z.number(),
   operation_type: z.string(),
@@ -171,13 +177,103 @@ export const financeOperationSchema = z.object({
     .default([]),
 });
 
-// POST /v3/finance/transaction/list — financev3FinanceTransactionListV3Response
-export const financeTransactionListResponseSchema = z.object({
-  result: z.object({
-    operations: z.array(financeOperationSchema).optional().default([]),
-    page_count: z.number().optional().default(0),
-    row_count: z.number().optional().default(0),
-  }),
+export type OzonFinanceOperation = z.infer<typeof financeOperationSchema>;
+
+// POST /v1/finance/accrual/types — v1GetFinanceAccrualTypesResponse
+export const accrualTypesResponseSchema = z.object({
+  accrual_types: z
+    .array(
+      z.object({
+        id: z.number(),
+        name: z.string().optional().default(""),
+      }),
+    )
+    .optional()
+    .default([]),
 });
 
-export type OzonFinanceOperation = z.infer<typeof financeOperationSchema>;
+// Сумма в начислениях приходит строкой и может быть отрицательной
+const accruedMoney = z
+  .object({ amount: z.string().optional().default("0") })
+  .nullish()
+  .transform((v) => {
+    const parsed = Number.parseFloat(v?.amount ?? "0");
+    return Number.isFinite(parsed) ? parsed : 0;
+  });
+
+const accrualFeeSchema = z.object({
+  type_id: z.number().nullish(),
+  accrued: accruedMoney,
+});
+
+// Одно начисление из /v1/finance/accrual/by-day
+export const accrualSchema = z.object({
+  accrual_id: z.number(),
+  date: z.string(),
+  // UNSPECIFIED | POSTING | ITEM | NON_ITEM
+  accrued_category: nullableText,
+  unit_number: z.string().nullish(),
+  total_amount: accruedMoney,
+  posting: z
+    .object({
+      delivery_schema: nullableText,
+      products: z
+        .array(
+          z.object({
+            sku: z.number().nullish(),
+            quantity: z
+              .number()
+              .nullish()
+              .transform((v) => v ?? 0),
+            commission: z
+              .object({
+                sale_amount: accruedMoney,
+                sale_commission: accruedMoney,
+                commission: accruedMoney,
+                bonus: accruedMoney,
+              })
+              .nullish(),
+            delivery: z
+              .object({
+                total_accrued: accruedMoney,
+                services: z.array(accrualFeeSchema).optional().default([]),
+              })
+              .nullish(),
+          }),
+        )
+        .optional()
+        .default([]),
+    })
+    .nullish(),
+  item_fees: z
+    .object({
+      fees: z
+        .array(
+          z.object({
+            sku: z.number().nullish(),
+            quantity: z
+              .number()
+              .nullish()
+              .transform((v) => v ?? 0),
+            fees: z.array(accrualFeeSchema).optional().default([]),
+          }),
+        )
+        .optional()
+        .default([]),
+    })
+    .nullish(),
+  non_item_fee: accrualFeeSchema.nullish(),
+  container_fees: z
+    .object({
+      fees: z.array(accrualFeeSchema).optional().default([]),
+    })
+    .nullish(),
+});
+
+export type OzonAccrual = z.infer<typeof accrualSchema>;
+
+// POST /v1/finance/accrual/by-day — v1GetFinanceAccrualByDayResponse
+export const accrualByDayResponseSchema = z.object({
+  accruals: z.array(accrualSchema).optional().default([]),
+  last_id: z.string().nullish(),
+});
