@@ -35,7 +35,7 @@ export function TelegramSettingsCard() {
       </h2>
       <p className="mt-1 mb-4 text-sm text-text-secondary">
         Каждое утро бот пришлёт итоги вчерашнего дня: выручку, чистую прибыль и
-        предупреждения. Напишите боту приложения /start, узнайте свой Chat ID у
+        предупреждения. Напишите боту приложения @ozon_profit_st_bot,  /start, узнайте свой Chat ID у
         @userinfobot и вставьте его сюда.
       </p>
 
