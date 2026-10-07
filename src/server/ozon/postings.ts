@@ -47,8 +47,9 @@ export async function fetchOzonFboPostings(
 ): Promise<NormalizedFboPostingLine[]> {
   const lines: NormalizedFboPostingLine[] = [];
   let cursor = "";
+  let page = 0;
 
-  for (let page = 0; page < MAX_PAGES; page += 1) {
+  for (; page < MAX_PAGES; page += 1) {
     const response = fboPostingListResponseSchema.parse(
       await ozonRequest({
         endpoint: "/v3/posting/fbo/list",
@@ -65,9 +66,17 @@ export async function fetchOzonFboPostings(
     );
 
     lines.push(...response.postings.flatMap(toLines));
+
+    // Выходим, если страница пустая или курсор не сдвинулся: иначе цикл
+    // крутит одну и ту же выборку до MAX_PAGES и съедает лимит функции
     if (!response.has_next || !response.cursor) break;
+    if (response.postings.length === 0 || response.cursor === cursor) break;
     cursor = response.cursor;
   }
+
+  console.log(
+    `fetchOzonFboPostings: ${page + 1} страниц, ${lines.length} строк`,
+  );
 
   return lines;
 }
